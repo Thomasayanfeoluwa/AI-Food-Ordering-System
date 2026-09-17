@@ -1,5 +1,6 @@
 google-genai==1.38.0
 python-dotenv==1.0.1
+chainlit
 twilio==9.3.7
 fastapi==0.115.6
 uvicorn==0.34.0
