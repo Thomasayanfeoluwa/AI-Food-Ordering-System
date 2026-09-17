@@ -46,7 +46,7 @@ def convert_messages_to_gemini(messages):
     return history
 
 
-def order_request(messages, model="gemini-2.5-flash", temperature=0):
+def order_request(messages, model="gemini-3.6-flash", temperature=0):
     """
     Send the complete conversation to Gemini and return
     the model's text response.
