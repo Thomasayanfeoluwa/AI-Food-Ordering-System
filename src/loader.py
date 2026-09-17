@@ -1,4 +1,5 @@
-from groq import Groq
+from google import genai
+from google.genai import types
 from src.prompt import system_instruction
 import streamlit as st
 import os
@@ -6,45 +7,26 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# api_key = os.environ.get("GROQ_API_KEY")
-api_key = st.secrets.get("GROQ_API_KEY")
-
+# Load Gemini API key
+api_key = st.secrets.get("GEMINI_API_KEY")
 
 st.write("API key loaded:", "Yes" if api_key else "No")
 
 if not api_key:
-    raise ValueError("GROQ_API_KEY environment variable not set.")
+    raise ValueError("GEMINI_API_KEY not set.")
 
-client = Groq(api_key=api_key)
-
-
-# Initialize LLM
-# messages = [
-#     {"role": "system", "content": system_instruction}
-# ]
-
-# def order_request(messages, model="openai/gpt-oss-120b", temperature=0):
-# #  model="llama-3.3-70b-versatile"
-#     response = client.chat.completions.create(
-#         model=model,
-#         messages=messages,
-#         temperature=temperature
-#     )
-#     return response.choices[0].message.content
+# Initialize Gemini client
+client = genai.Client(api_key=api_key)
 
 
-def order_request(messages, model="openai/gpt-oss-120b", temperature=0):
-    try:
-        response = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            temperature=temperature
+def order_request(messages, model="gemini-3.8-flash", temperature=0):
+    response = client.models.generate_content(
+        model=model,
+        contents=messages,
+        config=types.GenerateContentConfig(
+            temperature=temperature,
+            system_instruction=system_instruction
         )
-        return response.choices[0].message.content
+    )
 
-    except Exception as e:
-        st.error(f"Groq API Error: {type(e).__name__}")
-        st.error(str(e))
-        raise
-
-
+    return response.text
