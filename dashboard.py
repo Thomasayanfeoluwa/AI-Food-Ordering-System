@@ -656,6 +656,14 @@ def main():
         for key in ['name', 'phone', 'address', 'email']:
             if current_customer_info[key] and not st.session_state.user_sessions[user_id][key]:
                 st.session_state.user_sessions[user_id][key] = current_customer_info[key]
+
+        # Sync customer information to the sidebar display
+        st.session_state.customer_info = {
+            'name': st.session_state.user_sessions[user_id].get('name') or '',
+            'phone': st.session_state.user_sessions[user_id].get('phone') or '',
+            'address': st.session_state.user_sessions[user_id].get('address') or '',
+            'email': st.session_state.user_sessions[user_id].get('email') or ''
+        }
         
         # Display assistant response
         with st.chat_message("assistant"):
