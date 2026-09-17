@@ -689,7 +689,7 @@ def main():
                                 if local_image_data:
                                     # Extract dish name from the image path and use it as caption
                                     dish_name = Path(img_url).stem.replace('_', ' ').title()
-                                    st.image(local_image_data, caption=dish_name, width="stretch")
+                                    st.image(local_image_data, caption=dish_name)
         
         # DEBUG: Check if order confirmation is detected
         st.sidebar.markdown("---")
