@@ -1,5 +1,5 @@
 chainlit
-groq
+google-genai
 python-dotenv
 twilio
 fastapi
