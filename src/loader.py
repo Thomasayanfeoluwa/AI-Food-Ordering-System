@@ -23,7 +23,7 @@ messages = [
     {"role": "system", "content": system_instruction}
 ]
 
-def order_request(messages, model = "llama-3.3-70b-versatile", temperature=0): 
+def order_request(messages, model="openai/gpt-oss-120b", temperature=0):
 #  model="llama-3.3-70b-versatile"
     response = client.chat.completions.create(
         model=model,
