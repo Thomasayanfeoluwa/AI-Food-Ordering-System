@@ -19,17 +19,32 @@ client = Groq(api_key=api_key)
 
 
 # Initialize LLM
-messages = [
-    {"role": "system", "content": system_instruction}
-]
+# messages = [
+#     {"role": "system", "content": system_instruction}
+# ]
+
+# def order_request(messages, model="openai/gpt-oss-120b", temperature=0):
+# #  model="llama-3.3-70b-versatile"
+#     response = client.chat.completions.create(
+#         model=model,
+#         messages=messages,
+#         temperature=temperature
+#     )
+#     return response.choices[0].message.content
+
 
 def order_request(messages, model="openai/gpt-oss-120b", temperature=0):
-#  model="llama-3.3-70b-versatile"
-    response = client.chat.completions.create(
-        model=model,
-        messages=messages,
-        temperature=temperature
-    )
-    return response.choices[0].message.content
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=temperature
+        )
+        return response.choices[0].message.content
+
+    except Exception as e:
+        st.error(f"Groq API Error: {type(e).__name__}")
+        st.error(str(e))
+        raise
 
 
