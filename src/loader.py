@@ -16,7 +16,9 @@ if not api_key:
 
 # Initialize Gemini client
 client = genai.Client(api_key=api_key)
-
+st.write("Gemini key loaded:", bool(api_key))
+st.write("Gemini key prefix:", api_key[:3] if api_key else "NONE")
+st.write("Gemini key length:", len(api_key) if api_key else 0)
 
 def convert_messages_to_gemini(messages):
     """
