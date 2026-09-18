@@ -751,19 +751,18 @@ def main():
                             if possible_path.exists():
                                 local_image_paths.append(possible_path)
 
-                # Use the enhanced notification method (WHATSAPP ONLY with images)
+                # Use the notification method with food images
                 notification_result = notification_manager.notify_owner_with_whatsapp_images(
                     order_details=order_summary,  # Use the full LLM response
                     customer_info=customer_info,
                     total_amount=total_amount,
-                    image_references=local_image_paths  # Pass actual image paths for WhatsApp only
+                    image_references=local_image_paths  # Pass actual local image paths
                 )
 
                 st.sidebar.write(f"📊 Notification Results:")
-                st.sidebar.write(f"   SMS: {'✅' if notification_result['sms'] else '❌'}")
-                st.sidebar.write(f"   WhatsApp: {'✅' if notification_result['whatsapp'] else '❌'}")
+                st.sidebar.write(f"   Pushover: {'✅' if notification_result['pushover'] else '❌'}")
                 st.sidebar.write(f"   Email: {'✅' if notification_result['email'] else '❌'}")
-                st.sidebar.write(f"   Images Sent to WhatsApp: {notification_result['images_found']}")
+                st.sidebar.write(f"   Images Sent to Pushover: {notification_result['images_found']}")
                 
                 # Generate payment link for customer - USING DIRECT API CALL
                 st.sidebar.info("🔄 Creating payment link...")
