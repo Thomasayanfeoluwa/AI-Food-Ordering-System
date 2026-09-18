@@ -16,23 +16,6 @@ if not api_key:
 # Initialize Gemini client
 client = genai.Client(api_key=api_key)
 
-
-# TEMPORARY Gemini authentication test
-# Remove this block after confirming that the connection works.
-try:
-    test_response = client.models.generate_content(
-        model="gemini-3.6-flash",
-        contents="Reply with exactly: Gemini connection successful."
-    )
-
-    st.success("Gemini connection successful.")
-    st.write(test_response.text)
-
-except Exception as e:
-    st.error(f"Gemini test failed: {type(e).__name__}: {e}")
-    st.stop()
-
-
 def convert_messages_to_gemini(messages):
     """
     Convert the existing OpenAI/Groq-style conversation
