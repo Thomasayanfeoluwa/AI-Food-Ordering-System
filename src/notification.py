@@ -2,6 +2,7 @@ import smtplib
 import os
 from twilio.rest import Client
 from pathlib import Path
+from urllib.parse import quote
 
 class NotificationManager:
 
@@ -13,6 +14,11 @@ class NotificationManager:
         self.twilio_virtual_number = os.environ.get("TWILIO_VIRTUAL_NUMBER")
         self.twilio_verified_number = os.environ.get("TWILIO_VERIFIED_NUMBER")
         self.whatsapp_number = os.environ.get("TWILIO_WHATSAPP_NUMBER")
+
+        self.image_base_url = os.environ.get(
+        "IMAGE_BASE_URL",
+        "https://raw.githubusercontent.com/Thomasayanfeoluwa/AI-Food-Ordering-System/main/images"
+        )
         
         # Initialize Twilio Client only if credentials exist
         twilio_sid = os.environ.get('TWILIO_ACCOUNT_SID')
@@ -60,6 +66,10 @@ class NotificationManager:
         
         return None
 
+    def _get_public_image_url(self, image_reference):
+        filename = Path(str(image_reference)).name
+        return f"{self.image_base_url}/{quote(filename)}"
+
     def send_sms(self, message_body):
         """Send SMS notification (TEXT ONLY - no images)"""
         if not self.client:
@@ -92,7 +102,7 @@ class NotificationManager:
                     message = self.client.messages.create(
                         from_=f'whatsapp:{self.whatsapp_number}',
                         body=message_body,
-                        media_url=[f'file://{first_image_path.absolute()}'],
+                        media_url=[self._get_public_image_url(first_image_path)],
                         to=f'whatsapp:{self.twilio_verified_number}'
                     )
                     print(f"WhatsApp with image sent. SID: {message.sid}")
@@ -102,7 +112,7 @@ class NotificationManager:
                         if img_path.exists():
                             self.client.messages.create(
                                 from_=f'whatsapp:{self.whatsapp_number}',
-                                media_url=[f'file://{img_path.absolute()}'],
+                                media_url=[self._get_public_image_url(img_path)],
                                 to=f'whatsapp:{self.twilio_verified_number}'
                             )
                     return True

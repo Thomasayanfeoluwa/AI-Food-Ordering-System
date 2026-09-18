@@ -12,13 +12,13 @@ class DishImageService:
             "Egusi Soup with Goat Meat": "/images/egusi.jpg",
 
             ### Ogbono Soups
-            "Ogbono Soup with Beef": "/images/ogbono.jpg",
-            "Ogbono Soup with Fish": "/images/ogbono.jpg",
-            "Ogbono Soup with Okporoko (Stockfish)": "/images/ogbono.jpg",
+            "Ogbono Soup with Beef": "/images/ogbono.jpeg",
+            "Ogbono Soup with Fish": "/images/ogbono.jpeg",
+            "Ogbono Soup with Okporoko (Stockfish)": "/images/ogbono.jpeg",
 
             ### Vegetable Soups
-            "Vegetable Soup (Efo Riro)": "/images/vegetable-soup.jpg",
-            "Bitterleaf Soup (Ofe Onugbu)": "/images/bitterleaf-soup.jpg",
+            "Vegetable Soup (Efo Riro)": "/images/vegetable-soup.png",
+            "Bitterleaf Soup (Ofe Onugbu)": "/images/bitterleaf-soup.jpeg",
             "Oha Soup": "/images/oha-soup.jpg",
             "Afang Soup": "/images/afang.jpg",
             "Edikaikong Soup": "/images/edikaikong.jpg",
@@ -40,10 +40,10 @@ class DishImageService:
             # 🍚 RICE DISHES
             
             ### Jollof Rice
-            "Plain Jollof Rice": "/images/jollof-protein.jpg",
-            "Jollof Rice with Chicken": "/images/jollof-protein.jpg",
-            "Jollof Rice with Beef": "/images/jollof-protein.jpg",
-            "Party Jollof Rice": "/images/jollof-protein.jpg",
+            "Plain Jollof Rice": "/images/jollof-protein.jpeg",
+            "Jollof Rice with Chicken": "/images/jollof-protein.jpeg",
+            "Jollof Rice with Beef": "/images/jollof-protein.jpeg",
+            "Party Jollof Rice": "/images/jollof-protein.jpeg",
 
             ### Other Rice Dishes
             "Fried Rice with Chicken": "/images/fried-rice.jpg",
@@ -117,7 +117,7 @@ class DishImageService:
             "Chapman Special": "/images/chapman-special.jpg",
 
             ### Soft Drinks and Water
-            "Coke (35cl)": "/images/coke.jpg",
+            "Coke (35cl)": "/images/coke.jpeg",
             "Fanta (35cl)": "/images/fanta.jpg",
             "Sprite (35cl)": "/images/sprite.jpg",
             "Maltina": "/images/maltina.jpg",
@@ -139,16 +139,16 @@ class DishImageService:
             # 🍛 COMBO MEALS
             
             ### Executive Combos
-            "Jollof Rice + Chicken + Salad + Drink": "/images/jollof-protein.jpg",
+            "Jollof Rice + Chicken + Salad + Drink": "/images/jollof-protein.jpeg",
             "Fried Rice + Beef + Plantain + Drink": "/images/fried-rice.jpg",
             "Pounded Yam + Egusi Soup + Assorted Meat": "/images/pounded-yam.jpg",
 
             ### Student Combos
-            "Jollof Rice + Chicken": "/images/jollof-protein.jpg",
+            "Jollof Rice + Chicken": "/images/jollof-protein.jpeg",
             "Fried Rice + Beef": "/images/fried-rice.jpg",
 
             ### Family Packs
-            "Family Jollof Rice Pack (Serves 4)": "/images/jollof-protein.jpg",
+            "Family Jollof Rice Pack (Serves 4)": "/images/jollof-protein.jpeg",
             "Family Fried Rice Pack (Serves 4)": "/images/fried-rice.jpg",
 
             # 🎉 PARTY PACKS
@@ -170,7 +170,6 @@ class DishImageService:
         
         # If no match found, return None
         return None
-    
     def get_images_for_order(self, order_text):
         """Extract dish images from order text"""
         images = []
@@ -217,7 +216,7 @@ class DishImageService:
         
         # This is a helper method to see which dishes have images
         for dish_name, image_url in self.dish_images.items():
-            # You would need to map dishes to categories - this is simplified
+            # To map dishes to categories - this is simplified
             print(f"'{dish_name}': '{image_url}',")
         
         return categories
