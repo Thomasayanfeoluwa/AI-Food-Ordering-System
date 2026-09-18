@@ -6,7 +6,6 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 from google.genai.errors import ServerError
 
 
-
 # Load Gemini API key from Streamlit Secrets
 api_key = st.secrets.get("GEMINI_API_KEY")
 
@@ -16,9 +15,23 @@ if not api_key:
 
 # Initialize Gemini client
 client = genai.Client(api_key=api_key)
-st.write("Gemini key loaded:", bool(api_key))
-st.write("Gemini key prefix:", api_key[:3] if api_key else "NONE")
-st.write("Gemini key length:", len(api_key) if api_key else 0)
+
+
+# TEMPORARY Gemini authentication test
+# Remove this block after confirming that the connection works.
+try:
+    test_response = client.models.generate_content(
+        model="gemini-3.6-flash",
+        contents="Reply with exactly: Gemini connection successful."
+    )
+
+    st.success("Gemini connection successful.")
+    st.write(test_response.text)
+
+except Exception as e:
+    st.error(f"Gemini test failed: {type(e).__name__}: {e}")
+    st.stop()
+
 
 def convert_messages_to_gemini(messages):
     """
@@ -50,8 +63,9 @@ def convert_messages_to_gemini(messages):
 
     return history
 
+
 @retry(
-    stop=stop_after_attempt(3), 
+    stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=2, max=10),
     retry=retry_if_exception_type(ServerError),
     reraise=True
@@ -86,7 +100,7 @@ messages = [
         "role": "assistant",
         "content": (
             "How you dey! Welcome to DishDelivery Nigerian Restaurant! 🍽️\n\n"
-            "I'm here to help you place your order for our authentic Nigerian cuisine.\n\n"
+            "I'm here to help you place your order for our authentic Nigerian cuisine.\n"
             "Let me show you our menu first, then you can tell me what you'd like to order!"
         )
     }
