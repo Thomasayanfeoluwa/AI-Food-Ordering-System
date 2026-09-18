@@ -3,6 +3,7 @@ import streamlit as st
 import json
 import os
 import re
+import uuid
 import time
 import base64
 import requests
@@ -125,7 +126,8 @@ def load_local_image(image_path):
     """Load local image and convert to base64 for display"""
     try:
         # Define the absolute path to the images folder
-        images_folder = images_folder = Path("images")
+        # images_folder = images_folder = Path("images")
+        images_folder = Path("images")
         
         # Extract the base filename without extension
         filename_without_ext = Path(image_path).stem
@@ -138,7 +140,8 @@ def load_local_image(image_path):
             image_path_obj = images_folder / original_path.name
         else:
             # Try different extensions
-            possible_extensions = ['.jpg', '.jpeg', '.png', '.jpeg']
+            # possible_extensions = ['.jpg', '.jpeg', '.png', '.jpeg']
+            possible_extensions = ['.jpg', '.jpeg', '.png']
             image_path_obj = None
             
             for ext in possible_extensions:
@@ -172,23 +175,36 @@ def load_local_image(image_path):
 
 # Initialize session state
 def initialize_session_state():
+    # ---------------------------------------------------------
+    # GLOBAL SESSION STATE
+    # ---------------------------------------------------------
+
     if 'user_sessions' not in st.session_state:
         st.session_state.user_sessions = {}
+
     if 'current_session_id' not in st.session_state:
-        st.session_state.current_session_id = f"user_{int(time.time())}"
+        st.session_state.current_session_id = (
+            f"user_{uuid.uuid4().hex}"
+        )
+
     if 'conversation' not in st.session_state:
         st.session_state.conversation = messages.copy()
+
     if 'notification_sent' not in st.session_state:
         st.session_state.notification_sent = False
 
-    if 'payment_processed' not in st.session_state:
-        st.session_state.payment_processed = False
+    if 'payment_initialized' not in st.session_state:
+        st.session_state.payment_initialized = False
+
+    if 'payment_verified' not in st.session_state:
+        st.session_state.payment_verified = False
 
     if 'payment_reference' not in st.session_state:
         st.session_state.payment_reference = None
 
     if 'pending_order' not in st.session_state:
         st.session_state.pending_order = None
+
     if 'customer_info' not in st.session_state:
         st.session_state.customer_info = {
             'name': '',
@@ -196,10 +212,36 @@ def initialize_session_state():
             'address': '',
             'email': ''
         }
+
     if 'form_submitted' not in st.session_state:
         st.session_state.form_submitted = False
+
     if 'customer_info_updated' not in st.session_state:
         st.session_state.customer_info_updated = False
+
+    # ---------------------------------------------------------
+    # ENSURE THE CURRENT USER SESSION EXISTS
+    # ---------------------------------------------------------
+
+    user_id = st.session_state.current_session_id
+
+    if user_id not in st.session_state.user_sessions:
+        st.session_state.user_sessions[user_id] = {
+            'name': None,
+            'phone': None,
+            'address': None,
+            'email': None,
+
+            'order_status': 'ORDER_BUILDING',
+
+            'payment_initialized': False,
+            'payment_verified': False,
+
+            'payment_reference': None,
+            'pending_order': None,
+
+            'notification_sent': False
+        }
 
 # More flexible order confirmation detection
 def is_final_confirmation(response):
@@ -287,72 +329,107 @@ def extract_customer_info_from_response(response):
                     customer_info['email'] = email
     
     return customer_info
+# def extract_total_amount(response):
+#     """Extract the FINAL ORDER TOTAL amount - PRIORITIZE ORDER TOTAL"""
+#     total_amount = 0.0
+    
+#     # Strategy 1: Look specifically for "ORDER TOTAL" first (highest priority)
+#     order_total_patterns = [
+#         r'ORDER TOTAL.*₦\s*([\d,]+\.?\d*)',
+#         r'💰 ORDER TOTAL.*₦\s*([\d,]+\.?\d*)',
+#         r'total.*₦\s*([\d,]+\.?\d*).*order',
+#         r'final total.*₦\s*([\d,]+\.?\d*)',
+#     ]
+    
+#     for pattern in order_total_patterns:
+#         matches = re.findall(pattern, response, re.IGNORECASE | re.DOTALL)
+#         if matches:
+#             try:
+#                 total_amount = float(matches[0].replace(',', ''))
+#                 st.sidebar.success(f"✅ ORDER TOTAL extracted: ₦{total_amount:,.2f}")
+#                 return total_amount
+#             except ValueError:
+#                 continue
+    
+#     # Strategy 2: Look for amounts in the last lines (where totals usually are)
+#     lines = response.split('\n')
+#     lines.reverse()  # Start from the bottom where totals usually are
+    
+#     for line in lines:
+#         line_lower = line.lower()
+#         if any(keyword in line_lower for keyword in ['order total', 'total', 'final amount', '💰']):
+#             amounts = re.findall(r'₦\s*([\d,]+\.?\d*)', line)
+#             if amounts:
+#                 try:
+#                     total_amount = float(amounts[-1].replace(',', ''))  # Take the last amount in the line
+#                     st.sidebar.success(f"✅ Bottom-up total extracted: ₦{total_amount:,.2f}")
+#                     return total_amount
+#                 except ValueError:
+#                     continue
+    
+#     # Strategy 3: Fallback to original pattern matching
+#     patterns = [
+#         r'₦\s*([\d,]+\.?\d*)',
+#         r'total.*₦\s*([\d,]+\.?\d*)',
+#     ]
+    
+#     # Find ALL amounts and take the LARGEST one (most likely the total)
+#     all_amounts = []
+#     for pattern in patterns:
+#         matches = re.findall(pattern, response, re.IGNORECASE | re.DOTALL)
+#         for match in matches:
+#             try:
+#                 amount = float(match.replace(',', ''))
+#                 if amount >= 1000:  # Reasonable minimum for food orders
+#                     all_amounts.append(amount)
+#             except ValueError:
+#                 continue
+    
+#     if all_amounts:
+#         total_amount = max(all_amounts)  # Take the largest amount
+#         st.sidebar.info(f"ℹ️ Used largest amount: ₦{total_amount:,.2f}")
+    
+#     if total_amount == 0.0:
+#         st.sidebar.error("❌ Could not extract total amount")
+#     else:
+#         st.sidebar.success(f"🎯 Final amount for Paystack: ₦{total_amount:,.2f}")
+    
+#     return total_amount
+
 def extract_total_amount(response):
-    """Extract the FINAL ORDER TOTAL amount - PRIORITIZE ORDER TOTAL"""
-    total_amount = 0.0
-    
-    # Strategy 1: Look specifically for "ORDER TOTAL" first (highest priority)
-    order_total_patterns = [
-        r'ORDER TOTAL.*₦\s*([\d,]+\.?\d*)',
-        r'💰 ORDER TOTAL.*₦\s*([\d,]+\.?\d*)',
-        r'total.*₦\s*([\d,]+\.?\d*).*order',
-        r'final total.*₦\s*([\d,]+\.?\d*)',
+    """
+    Extract the final order total only from an explicit
+    ORDER TOTAL / FINAL TOTAL field.
+
+    Do not use largest-amount guessing for payments.
+    """
+
+    patterns = [
+        r'ORDER\s+TOTAL\s*[:\-]?\s*₦\s*([\d,]+(?:\.\d{1,2})?)',
+        r'FINAL\s+TOTAL\s*[:\-]?\s*₦\s*([\d,]+(?:\.\d{1,2})?)',
+        r'TOTAL\s+AMOUNT\s*[:\-]?\s*₦\s*([\d,]+(?:\.\d{1,2})?)',
     ]
-    
-    for pattern in order_total_patterns:
-        matches = re.findall(pattern, response, re.IGNORECASE | re.DOTALL)
+
+    for pattern in patterns:
+        matches = re.findall(
+            pattern,
+            response,
+            re.IGNORECASE
+        )
+
         if matches:
             try:
-                total_amount = float(matches[0].replace(',', ''))
-                st.sidebar.success(f"✅ ORDER TOTAL extracted: ₦{total_amount:,.2f}")
-                return total_amount
-            except ValueError:
+                amount = float(
+                    matches[-1].replace(',', '')
+                )
+
+                if amount > 0:
+                    return amount
+
+            except (ValueError, TypeError):
                 continue
-    
-    # Strategy 2: Look for amounts in the last lines (where totals usually are)
-    lines = response.split('\n')
-    lines.reverse()  # Start from the bottom where totals usually are
-    
-    for line in lines:
-        line_lower = line.lower()
-        if any(keyword in line_lower for keyword in ['order total', 'total', 'final amount', '💰']):
-            amounts = re.findall(r'₦\s*([\d,]+\.?\d*)', line)
-            if amounts:
-                try:
-                    total_amount = float(amounts[-1].replace(',', ''))  # Take the last amount in the line
-                    st.sidebar.success(f"✅ Bottom-up total extracted: ₦{total_amount:,.2f}")
-                    return total_amount
-                except ValueError:
-                    continue
-    
-    # Strategy 3: Fallback to original pattern matching
-    patterns = [
-        r'₦\s*([\d,]+\.?\d*)',
-        r'total.*₦\s*([\d,]+\.?\d*)',
-    ]
-    
-    # Find ALL amounts and take the LARGEST one (most likely the total)
-    all_amounts = []
-    for pattern in patterns:
-        matches = re.findall(pattern, response, re.IGNORECASE | re.DOTALL)
-        for match in matches:
-            try:
-                amount = float(match.replace(',', ''))
-                if amount >= 1000:  # Reasonable minimum for food orders
-                    all_amounts.append(amount)
-            except ValueError:
-                continue
-    
-    if all_amounts:
-        total_amount = max(all_amounts)  # Take the largest amount
-        st.sidebar.info(f"ℹ️ Used largest amount: ₦{total_amount:,.2f}")
-    
-    if total_amount == 0.0:
-        st.sidebar.error("❌ Could not extract total amount")
-    else:
-        st.sidebar.success(f"🎯 Final amount for Paystack: ₦{total_amount:,.2f}")
-    
-    return total_amount
+
+    return 0.0
 
 
 def extract_with_patterns(text, patterns):
@@ -581,32 +658,95 @@ def main():
             st.success("✅ Information updated successfully!")
             st.rerun()
 
-        # Display current order status
-        st.subheader("Order Status")
+    # Display current order status
+    st.subheader("Order Status")
 
-        if st.session_state.notification_sent:
-            st.success("✅ Payment confirmed — order sent to restaurant.")
-        elif st.session_state.payment_processed:
-            st.info("💳 Payment link created — awaiting payment verification.")
-        else:
-            st.info("🔄 Order in progress...")
+    user_id = st.session_state.current_session_id
+    user_session = st.session_state.user_sessions[user_id]
+
+    order_status = user_session.get(
+        'order_status',
+        'ORDER_BUILDING'
+    )
+
+    if order_status == 'ORDER_BUILDING':
+        st.info("🔄 Order in progress...")
+
+    elif order_status == 'ORDER_CONFIRMED':
+        st.info("✅ Order confirmed — preparing payment.")
+
+    elif order_status == 'PAYMENT_INITIALIZED':
+        st.info(
+            "💳 Payment link created — awaiting payment verification."
+        )
+
+    elif order_status == 'PAYMENT_VERIFIED':
+        st.success(
+            "✅ Payment verified — order is ready to be sent to the restaurant."
+        )
+
+    elif order_status == 'NOTIFICATION_SENT':
+        st.success(
+            "✅ Payment confirmed — order sent to restaurant."
+        )
+
+    elif order_status == 'COMPLETE':
+        st.success(
+            "✅ Order complete."
+        )
         
         # Quick actions
         st.subheader("Quick Actions")
-        if st.button("Start New Order"):
+
+        if st.button("Start New Order", key="start_new_order"):
+
+            # ---------------------------------------------------------
+            # CREATE A NEW ORDER SESSION
+            # ---------------------------------------------------------
+
+            new_session_id = f"user_{uuid.uuid4().hex}"
+
+            st.session_state.current_session_id = new_session_id
+
+            st.session_state.user_sessions[new_session_id] = {
+                'name': None,
+                'phone': None,
+                'address': None,
+                'email': None,
+
+                'order_status': 'ORDER_BUILDING',
+
+                'payment_initialized': False,
+                'payment_verified': False,
+
+                'payment_reference': None,
+                'pending_order': None,
+
+                'notification_sent': False
+            }
+
+            # ---------------------------------------------------------
+            # RESET GLOBAL STATE FOR THE NEW ORDER
+            # ---------------------------------------------------------
+
             st.session_state.conversation = messages.copy()
+
             st.session_state.notification_sent = False
-            st.session_state.payment_processed = False
+            st.session_state.payment_initialized = False
+            st.session_state.payment_verified = False
             st.session_state.payment_reference = None
             st.session_state.pending_order = None
+
             st.session_state.customer_info = {
                 'name': '',
                 'phone': '',
                 'address': '',
                 'email': ''
             }
+
             st.session_state.form_submitted = False
             st.session_state.customer_info_updated = False
+
             st.rerun()
 
     # User input
@@ -620,19 +760,7 @@ def main():
         
         # Process user message and update customer info
         user_id = st.session_state.current_session_id
-        
-        # Initialize user session if not exists
-        if user_id not in st.session_state.user_sessions:
-            st.session_state.user_sessions[user_id] = {
-                'name': None,
-                'phone': None,
-                'address': None,
-                'email': None,
-                'notification_sent': False,
-                'payment_processed': False,
-                'payment_reference': None,
-                'pending_order': None
-            }
+        user_session = st.session_state.user_sessions[user_id]
         
         # Extract customer info from user message
         phone_match = re.search(r'(\+?234|0)[789][01]\d{8}', prompt)
@@ -658,92 +786,169 @@ def main():
         # Get LLM response
         with st.spinner("Processing your order..."):
             response = order_request(st.session_state.conversation)
-        
-        # Add assistant response to conversation
-        st.session_state.conversation.append({"role": "assistant", "content": response})
-        
-        # Extract customer info from current response and update session
-        current_customer_info = extract_customer_info_from_response(response)
-        for key in ['name', 'phone', 'address', 'email']:
-            if current_customer_info[key] and not st.session_state.user_sessions[user_id][key]:
-                st.session_state.user_sessions[user_id][key] = current_customer_info[key]
+            total_amount = extract_total_amount(response)
+        # Process dish images exactly once for this assistant response.
+        dish_images = []
 
-        # Sync customer information to the sidebar display
+        if any(
+            keyword in response.lower()
+            for keyword in [
+                'menu',
+                'dish',
+                'soup',
+                'rice',
+                'chicken',
+                'beef',
+                'fish',
+                'plantain',
+                'drink'
+            ]
+        ):
+            dish_images = image_service.get_images_for_order(response)
+        # Add assistant response to conversation
+        st.session_state.conversation.append({
+            "role": "assistant",
+            "content": response
+        })
+
+        # Extract customer information
+        current_customer_info = extract_customer_info_from_response(response)
+
+        for key in ['name', 'phone', 'address', 'email']:
+            if (
+                current_customer_info[key]
+                and not user_session[key]
+            ):
+                user_session[key] = current_customer_info[key]
+
+        # Sync customer information to sidebar
         st.session_state.customer_info = {
-            'name': st.session_state.user_sessions[user_id].get('name') or '',
-            'phone': st.session_state.user_sessions[user_id].get('phone') or '',
-            'address': st.session_state.user_sessions[user_id].get('address') or '',
-            'email': st.session_state.user_sessions[user_id].get('email') or ''
+            'name': user_session.get('name') or '',
+            'phone': user_session.get('phone') or '',
+            'address': user_session.get('address') or '',
+            'email': user_session.get('email') or ''
         }
-        
+
         # Display assistant response
         with st.chat_message("assistant"):
             st.write(response)
-            
-            # Check if this is menu browsing or order discussion - SHOW IMAGES
-            if any(keyword in response.lower() for keyword in ['menu', 'dish', 'soup', 'rice', 'chicken', 'beef', 'fish', 'plantain', 'drink']):
-                # Show dish images when discussing menu items
-                dish_images = image_service.get_images_for_order(response)
+
+            if dish_images:
+                cols = st.columns(len(dish_images))
+
+                for idx, img_url in enumerate(dish_images):
+                    with cols[idx]:
+                        if img_url.startswith(('http://', 'https://')):
+                            dish_name = "Dish"
+
+                            if '/' in img_url:
+                                url_parts = img_url.split('/')
+                                last_part = url_parts[-1]
+
+                                if '.' in last_part:
+                                    dish_name = (
+                                        Path(last_part)
+                                        .stem
+                                        .replace('_', ' ')
+                                        .title()
+                                    )
+
+                            st.image(
+                                img_url,
+                                caption=dish_name,
+                                width="stretch"
+                            )
+
+                        else:
+                            local_image_data = load_local_image(img_url)
+
+                            if local_image_data:
+                                dish_name = (
+                                    Path(img_url)
+                                    .stem
+                                    .replace('_', ' ')
+                                    .title()
+                                )
+
+                                st.image(
+                                    local_image_data,
+                                    caption=dish_name
+                                )
                 
-                if dish_images:
-                    # Create columns for images
-                    cols = st.columns(len(dish_images))
-                    for idx, img_url in enumerate(dish_images):
-                        with cols[idx]:
-                            # Handle both URL and local file paths
-                            if img_url.startswith(('http://', 'https://')):
-                                # For URLs, try to extract dish name from URL or use a generic caption
-                                dish_name = "Dish"
-                                if '/' in img_url:
-                                    # Try to get the dish name from the URL path
-                                    url_parts = img_url.split('/')
-                                    if url_parts:
-                                        last_part = url_parts[-1]
-                                        if '.' in last_part:
-                                            dish_name = Path(last_part).stem.replace('_', ' ').title()
-                                st.image(img_url, caption=dish_name, width="stretch")
-                            else:
-                                # It's a local path - use our helper function
-                                local_image_data = load_local_image(img_url)
-                                if local_image_data:
-                                    # Extract dish name from the image path and use it as caption
-                                    dish_name = Path(img_url).stem.replace('_', ' ').title()
-                                    st.image(local_image_data, caption=dish_name)
-        
         # DEBUG: Check if order confirmation is detected
         st.sidebar.markdown("---")
         st.sidebar.subheader("🔧 Debug Info")
-        st.sidebar.write(f"Final Confirmation: {is_final_confirmation(response)}")
-        # st.sidebar.write(f"Total Amount: ₦{extract_total_amount(response):,.2f}")
-        # Don't call the function twice - store the result
-        current_amount = extract_total_amount(response)
-        st.sidebar.write(f"Total Amount: ₦{current_amount:,.2f}")
-        st.sidebar.write(f"Phone Provided: {st.session_state.user_sessions[user_id]['phone'] is not None}")
-        st.sidebar.write(f"Notification Sent: {st.session_state.user_sessions[user_id]['notification_sent']}")
-        
+
+        st.sidebar.write(
+            f"Final Confirmation: {is_final_confirmation(response)}"
+        )
+
+        st.sidebar.write(
+            f"Total Amount: ₦{total_amount:,.2f}"
+        )
+
+        st.sidebar.write(
+            f"Phone Provided: {user_session['phone'] is not None}"
+        )
+
+        st.sidebar.write(
+            f"Notification Sent: {user_session['notification_sent']}"
+        )
+
+        st.sidebar.write(
+            f"Payment Initialized: {user_session['payment_initialized']}"
+        )
+
+        st.sidebar.write(
+            f"Payment Verified: {user_session['payment_verified']}"
+        )
+
+        st.sidebar.write(
+            f"Order Status: {user_session['order_status']}"
+        )
 
 
         # Check if this is the FINAL confirmation
-        if (is_final_confirmation(response) and
-            not st.session_state.user_sessions[user_id]['notification_sent'] and
-            st.session_state.user_sessions[user_id]['phone'] is not None):
+        # if (is_final_confirmation(response) and
+        #     not st.session_state.user_sessions[user_id]['notification_sent'] and
+        #     st.session_state.user_sessions[user_id]['phone'] is not None
 
-            total_amount = extract_total_amount(response)
+            # total_amount = extract_total_amount(response)
+
+        if (
+            is_final_confirmation(response)
+            and user_session['order_status'] == 'ORDER_BUILDING'
+            and not user_session['payment_initialized']
+            and user_session['phone'] is not None
+        ):
 
             if total_amount > 0:
 
-                customer_info = st.session_state.user_sessions[user_id]
+                # ---------------------------------------------------------
+                # STEP 1 — CONFIRM THE ORDER INTERNALLY
+                # ---------------------------------------------------------
 
-                # Generate a unique Paystack reference for this order
-                payment_reference = f"DD{user_id}{int(time.time())}"
+                user_session['order_status'] = 'ORDER_CONFIRMED'
+
+                # ---------------------------------------------------------
+                # STEP 2 — CREATE ONE REFERENCE FOR THIS ORDER
+                # ---------------------------------------------------------
+
+                payment_reference = (
+                    user_session.get('payment_reference')
+                    or f"DD-{uuid.uuid4().hex}"
+                )
+
+                user_session['payment_reference'] = payment_reference
+                st.session_state.payment_reference = payment_reference
 
                 # Get order images
-                order_images = image_service.get_images_for_order(response)
+                # order_images = image_service.get_images_for_order(response)
 
                 # Convert image references to local paths
                 local_image_paths = []
 
-                for img_url in order_images:
+                for img_url in dish_images:
                     if img_url.startswith(('http://', 'https://')):
                         continue
 
@@ -759,14 +964,30 @@ def main():
                             local_image_paths.append(possible_path)
 
                 # Store the pending order BEFORE creating payment
-                pending_order = {
-                    "customer_info": customer_info.copy(),
-                    "total_amount": total_amount,
-                    "order_summary": response,
-                    "image_paths": [str(path) for path in local_image_paths],
-                    "payment_reference": payment_reference
+                # pending_order = {
+                #     "customer_info": customer_info.copy(),
+                #     "total_amount": total_amount,
+                #     "order_summary": response,
+                #     "image_paths": [str(path) for path in local_image_paths],
+                #     "payment_reference": payment_reference
+                # }
+                customer_info = {
+                    "name": user_session.get("name"),
+                    "phone": user_session.get("phone"),
+                    "address": user_session.get("address"),
+                    "email": user_session.get("email")
                 }
 
+                pending_order = {
+                    "customer_info": customer_info,
+                    "total_amount": total_amount,
+                    "order_summary": response,
+                    "image_paths": [
+                        str(path)
+                        for path in local_image_paths
+                    ],
+                    "payment_reference": payment_reference
+                }
                 st.session_state.pending_order = pending_order
                 st.session_state.payment_reference = payment_reference
 
@@ -779,96 +1000,188 @@ def main():
 
                 st.sidebar.info("🔄 Creating secure Paystack payment...")
 
+            #     payment_response = payment_service.initiate_payment(
+            #         email=customer_info.get('email') or 'customer@example.com',
+            #         amount=total_amount,
+            #         reference=payment_reference,
+            #         metadata={
+            #             "customer_name": customer_info.get('name'),
+            #             "phone": customer_info.get('phone'),
+            #             "address": customer_info.get('address'),
+            #             "order_reference": payment_reference
+            #         }
+            #     )
+
+            #     st.sidebar.write(
+            #         f"Payment Response Status: {payment_response.get('status')}"
+            #     )
+
+            #     if payment_response.get('status'):
+
+            #         payment_url = payment_response['data']['authorization_url']
+
+            #         st.session_state.payment_processed = True
+            #         st.session_state.user_sessions[user_id]['payment_processed'] = True
+
+            #         st.sidebar.success("✅ Payment link created.")
+
+            #         st.markdown(f"""
+            #         <div class="payment-section">
+            #             <h3>💰 Payment Required</h3>
+
+            #             <div class="payment-amount">
+            #                 Your Order Total: ₦{total_amount:,.2f}
+            #             </div>
+
+            #             <div class="payment-instruction">
+            #                 Please complete your payment using the secure Paystack link below.
+            #             </div>
+
+            #             <p>
+            #                 <a href="{payment_url}"
+            #                 target="_blank"
+            #                 style="background-color: #4CAF50;
+            #                         color: white;
+            #                         padding: 12px 24px;
+            #                         text-decoration: none;
+            #                         border-radius: 6px;
+            #                         display: inline-block;
+            #                         font-size: 16px;
+            #                         font-weight: bold;">
+            #                     💳 Pay Now with Paystack
+            #                 </a>
+            #             </p>
+
+            #             <div class="payment-instruction">
+            #                 After completing payment, return here and click
+            #                 <strong>Verify Payment</strong>.
+            #             </div>
+
+            #             <div class="delivery-time">
+            #                 ⏰ Delivery time: 30–45 minutes after payment confirmation
+            #             </div>
+            #         </div>
+            #         """, unsafe_allow_html=True)
+
+            #         st.success(f"Payment link created for ₦{total_amount:,.2f}")
+
+            #     else:
+
+            #         error_msg = payment_response.get(
+            #             'message',
+            #             'Unknown payment error'
+            #         )
+
+            #         st.error(f"Payment system error: {error_msg}")
+
+            # else:
+            #     st.error("❌ Could not determine a valid order total.")
+
                 payment_response = payment_service.initiate_payment(
-                    email=customer_info.get('email') or 'customer@example.com',
+                    email=customer_info.get('email') or f"{payment_reference}@dishdelivery.ng",
                     amount=total_amount,
                     reference=payment_reference,
                     metadata={
-                        "customer_name": customer_info.get('name'),
-                        "phone": customer_info.get('phone'),
-                        "address": customer_info.get('address'),
+                        "customer_name": customer_info.get("name"),
+                        "phone": customer_info.get("phone"),
+                        "address": customer_info.get("address"),
                         "order_reference": payment_reference
                     }
                 )
 
-                st.sidebar.write(
-                    f"Payment Response Status: {payment_response.get('status')}"
-                )
+                if payment_response.get("status"):
 
-                if payment_response.get('status'):
+                    payment_data = payment_response.get("data", {})
+                    payment_url = payment_data.get("authorization_url")
 
-                    payment_url = payment_response['data']['authorization_url']
+                    if not payment_url:
+                        user_session['order_status'] = 'ORDER_BUILDING'
 
-                    st.session_state.payment_processed = True
-                    st.session_state.user_sessions[user_id]['payment_processed'] = True
+                        st.error(
+                            "❌ Payment was initialized but Paystack "
+                            "did not return a payment URL. Please try again."
+                        )
+                    else:
+                        user_session['payment_initialized'] = True
+                        user_session['payment_verified'] = False
+                        user_session['payment_reference'] = payment_reference
+                        user_session['order_status'] = 'PAYMENT_INITIALIZED'
 
-                    st.sidebar.success("✅ Payment link created.")
+                        st.session_state.payment_initialized = True
+                        st.session_state.payment_verified = False
+                        st.session_state.payment_reference = payment_reference
 
-                    st.markdown(f"""
-                    <div class="payment-section">
-                        <h3>💰 Payment Required</h3>
+                        st.sidebar.success(
+                            "✅ Payment link created."
+                        )
 
-                        <div class="payment-amount">
-                            Your Order Total: ₦{total_amount:,.2f}
-                        </div>
+                        st.markdown(
+                            f"""
+                            <div class="payment-section">
+                                <h3>💰 Payment Required</h3>
 
-                        <div class="payment-instruction">
-                            Please complete your payment using the secure Paystack link below.
-                        </div>
+                                <div class="payment-amount">
+                                    Your Order Total: ₦{total_amount:,.2f}
+                                </div>
 
-                        <p>
-                            <a href="{payment_url}"
-                            target="_blank"
-                            style="background-color: #4CAF50;
-                                    color: white;
-                                    padding: 12px 24px;
-                                    text-decoration: none;
-                                    border-radius: 6px;
-                                    display: inline-block;
-                                    font-size: 16px;
-                                    font-weight: bold;">
-                                💳 Pay Now with Paystack
-                            </a>
-                        </p>
+                                <div class="payment-instruction">
+                                    Please complete your payment using the
+                                    secure Paystack link below.
+                                </div>
 
-                        <div class="payment-instruction">
-                            After completing payment, return here and click
-                            <strong>Verify Payment</strong>.
-                        </div>
+                                <p>
+                                    <a href="{payment_url}"
+                                    target="_blank"
+                                    style="
+                                        background-color: #4CAF50;
+                                        color: white;
+                                        padding: 12px 24px;
+                                        text-decoration: none;
+                                        border-radius: 6px;
+                                        display: inline-block;
+                                        font-size: 16px;
+                                        font-weight: bold;
+                                    ">
+                                        💳 Pay Now with Paystack
+                                    </a>
+                                </p>
 
-                        <div class="delivery-time">
-                            ⏰ Delivery time: 30–45 minutes after payment confirmation
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
+                                <div class="payment-instruction">
+                                    After completing payment, return here and
+                                    click <strong>Verify Payment</strong>.
+                                </div>
 
-                    st.success(f"Payment link created for ₦{total_amount:,.2f}")
+                                <div class="delivery-time">
+                                    ⏰ Delivery time: 30–45 minutes after
+                                    payment confirmation
+                                </div>
+                            </div>
+                            """,
+                            unsafe_allow_html=True
+                        )
 
                 else:
+                    user_session['order_status'] = 'ORDER_BUILDING'
 
-                    error_msg = payment_response.get(
-                        'message',
-                        'Unknown payment error'
+                    st.error(
+                        f"❌ Payment system error: "
+                        f"{payment_response.get('message', 'Unknown error')}"
                     )
-
-                    st.error(f"Payment system error: {error_msg}")
-
-            else:
-                st.error("❌ Could not determine a valid order total.")
-
 
     # ---------------------------------------------------------
     # PAYMENT VERIFICATION
     # ---------------------------------------------------------
 
-    pending_order = st.session_state.get('pending_order')
-    payment_reference = st.session_state.get('payment_reference')
+    pending_order = st.session_state.get("pending_order")
+    payment_reference = st.session_state.get("payment_reference")
     user_id = st.session_state.current_session_id
+    user_session = st.session_state.user_sessions[user_id]
 
     if (
         pending_order
         and payment_reference
-        and not st.session_state.notification_sent
+        and user_session['payment_initialized']
+        and not user_session['payment_verified']
     ):
 
         st.subheader("💳 Payment Verification")
@@ -886,118 +1199,339 @@ def main():
                     payment_reference
                 )
 
-            if verification.get("status"):
+    
+    # ---------------------------------------------------------
+    # RESTAURANT NOTIFICATION
+    # ---------------------------------------------------------
 
-                transaction_data = verification.get("data", {})
+    pending_order = st.session_state.get("pending_order")
 
-                # Paystack returns the amount in kobo
-                paid_amount = transaction_data.get("amount", 0) / 100
+    if (
+        pending_order
+        and user_session['payment_verified']
+        and not user_session['notification_sent']
+    ):
 
-                expected_amount = pending_order["total_amount"]
+        st.subheader("📨 Restaurant Notification")
 
-                transaction_reference = transaction_data.get(
-                    "reference"
+        st.info(
+            "Payment has been verified. "
+            "The order is ready to be sent to the restaurant."
+        )
+
+        if st.button(
+            "📤 Send Order to Restaurant",
+            key="send_order_notification"
+        ):
+
+            customer_info = pending_order["customer_info"]
+            total_amount = pending_order["total_amount"]
+            order_summary = pending_order["order_summary"]
+
+            local_image_paths = [
+                Path(path)
+                for path in pending_order["image_paths"]
+                if Path(path).exists()
+            ]
+
+            with st.spinner(
+                "Sending order details to the restaurant..."
+            ):
+
+                notification_result = (
+                    notification_manager
+                    .notify_owner_with_whatsapp_images(
+                        order_details=order_summary,
+                        customer_info=customer_info,
+                        total_amount=total_amount,
+                        image_references=local_image_paths
+                    )
                 )
 
-                transaction_currency = transaction_data.get(
-                    "currency"
+            st.sidebar.write("📊 Notification Results:")
+
+            st.sidebar.write(
+                "Pushover: "
+                f"{'✅' if notification_result.get('pushover') else '❌'}"
+            )
+
+            st.sidebar.write(
+                "Email: "
+                f"{'✅' if notification_result.get('email') else '❌'}"
+            )
+
+            st.sidebar.write(
+                "Images Sent: "
+                f"{notification_result.get('images_found', 0)}"
+            )
+
+            if (
+                notification_result.get('pushover')
+                or notification_result.get('email')
+            ):
+
+                user_session['notification_sent'] = True
+                user_session['order_status'] = 'NOTIFICATION_SENT'
+
+                st.session_state.notification_sent = True
+
+                st.success(
+                    "✅ Order successfully sent to the restaurant."
                 )
 
-                # Verify reference, amount and currency
-                if transaction_reference != payment_reference:
-                    st.error(
-                        "❌ Payment reference does not match this order."
-                    )
+            else:
 
-                elif abs(paid_amount - expected_amount) > 0.01:
-                    st.error(
-                        f"❌ Payment amount mismatch. "
-                        f"Expected ₦{expected_amount:,.2f}, "
-                        f"received ₦{paid_amount:,.2f}."
-                    )
+                # Keep payment_verified as True.
+                # Do not ask the customer to pay again.
+                user_session['payment_verified'] = True
+                user_session['order_status'] = 'PAYMENT_VERIFIED'
+                st.session_state['payment_verified'] = True
+                st.error(
+                    "❌ Payment is verified, but the restaurant "
+                    "notification failed. You can retry sending it."
+                )
 
-                elif transaction_currency != "NGN":
-                    st.error(
-                        f"❌ Unexpected payment currency: "
-                        f"{transaction_currency}"
+
+            # -------------------------------------------------
+            # STEP 1 — API RESPONSE VALIDATION
+            # -------------------------------------------------
+
+            if not verification.get("status"):
+
+                st.warning(
+                    "⏳ Paystack verification could not confirm "
+                    "this transaction yet. "
+                    f"{verification.get('message', '')}"
+                )
+
+            else:
+
+                transaction_data = (
+                    verification.get("data") or {}
+                )
+
+                # -------------------------------------------------
+                # STEP 2 — TRANSACTION STATUS
+                # -------------------------------------------------
+
+                transaction_status = transaction_data.get(
+                    "status"
+                )
+
+                if transaction_status != "success":
+
+                    st.warning(
+                        "⏳ Payment has not been successfully "
+                        "completed yet. "
+                        f"Paystack status: "
+                        f"{transaction_status or 'unknown'}."
                     )
 
                 else:
 
                     # -------------------------------------------------
-                    # PAYMENT IS NOW VERIFIED
+                    # STEP 3 — REFERENCE VALIDATION
                     # -------------------------------------------------
 
-                    # st.session_state.payment_processed = True
-                    # st.session_state.notification_sent = True
-                    st.session_state.payment_processed = True
-
-                    st.session_state.user_sessions[user_id][
-                        'payment_processed'
-                    ] = True
-
-                    # st.session_state.user_sessions[user_id][
-                    #     'notification_sent'
-                    # ] = True
-
-                    customer_info = pending_order["customer_info"]
-                    total_amount = pending_order["total_amount"]
-                    order_summary = pending_order["order_summary"]
-
-                    local_image_paths = [
-                        Path(path)
-                        for path in pending_order["image_paths"]
-                        if Path(path).exists()
-                    ]
-
-                    # -------------------------------------------------
-                    # NOW notify the restaurant
-                    # -------------------------------------------------
-
-                    st.info(
-                        "🔄 Payment verified. "
-                        "Sending order to the restaurant..."
+                    transaction_reference = (
+                        transaction_data.get("reference")
                     )
 
-                    notification_result = (
-                        notification_manager
-                        .notify_owner_with_whatsapp_images(
-                            order_details=order_summary,
-                            customer_info=customer_info,
-                            total_amount=total_amount,
-                            image_references=local_image_paths
-                        )
-                    )
+                    if transaction_reference != payment_reference:
 
-                    st.sidebar.write("📊 Notification Results:")
-                    st.sidebar.write(
-                        f"   Pushover: {'✅' if notification_result['pushover'] else '❌'}"
-                    )
-                    st.sidebar.write(
-                        f"   Email: {'✅' if notification_result['email'] else '❌'}"
-                    )
-                    st.sidebar.write(
-                        f"   Images Sent: {notification_result['images_found']}"
-                    )
-
-                    if notification_result['pushover'] or notification_result['email']:
-                        st.session_state.notification_sent = True
-                        st.session_state.user_sessions[user_id]['notification_sent'] = True
-                        st.success("✅ Payment confirmed — order sent to restaurant.")
-                    else:
                         st.error(
-                            "❌ Payment was verified, but the restaurant notification could not be sent."
+                            "❌ Payment reference does not "
+                            "match this order."
                         )
 
+                    else:
 
+                        # -------------------------------------------------
+                        # STEP 4 — AMOUNT VALIDATION
+                        # -------------------------------------------------
 
-            else:
+                        paid_amount_kobo = transaction_data.get(
+                            "amount"
+                        )
 
-                st.warning(
-                    f"⏳ Payment has not been confirmed yet. "
-                    f"{verification.get('message', '')}"
-                )
+                        if not isinstance(
+                            paid_amount_kobo,
+                            (int, float)
+                        ):
 
+                            st.error(
+                                "❌ Paystack returned an invalid "
+                                "payment amount."
+                            )
+
+                        else:
+
+                            paid_amount = (
+                                paid_amount_kobo / 100
+                            )
+
+                            expected_amount = float(
+                                pending_order["total_amount"]
+                            )
+
+                            if (
+                                abs(
+                                    paid_amount
+                                    - expected_amount
+                                )
+                                > 0.01
+                            ):
+
+                                st.error(
+                                    f"❌ Payment amount mismatch. "
+                                    f"Expected "
+                                    f"₦{expected_amount:,.2f}, "
+                                    f"received "
+                                    f"₦{paid_amount:,.2f}."
+                                )
+
+                            else:
+
+                                # -------------------------------------------------
+                                # STEP 5 — CURRENCY VALIDATION
+                                # -------------------------------------------------
+
+                                transaction_currency = (
+                                    transaction_data.get(
+                                        "currency"
+                                    )
+                                )
+
+                                if transaction_currency != "NGN":
+
+                                    st.error(
+                                        "❌ Unexpected payment "
+                                        f"currency: "
+                                        f"{transaction_currency}"
+                                    )
+
+                                else:
+
+                                    # -------------------------------------------------
+                                    # STEP 6 — PAYMENT IS VERIFIED
+                                    # -------------------------------------------------
+
+                                    user_session[
+                                        'payment_verified'
+                                    ] = True
+
+                                    user_session[
+                                        'order_status'
+                                    ] = 'PAYMENT_VERIFIED'
+
+                                    st.session_state[
+                                        'payment_verified'
+                                    ] = True
+
+                                    # # -------------------------------------------------
+                                    # # STEP 7 — RESTAURANT NOTIFICATION
+                                    # # -------------------------------------------------
+
+                                    # customer_info = (
+                                    #     pending_order[
+                                    #         "customer_info"
+                                    #     ]
+                                    # )
+
+                                    # total_amount = (
+                                    #     pending_order[
+                                    #         "total_amount"
+                                    #     ]
+                                    # )
+
+                                    # order_summary = (
+                                    #     pending_order[
+                                    #         "order_summary"
+                                    #     ]
+                                    # )
+
+                                    # local_image_paths = [
+                                    #     Path(path)
+                                    #     for path in pending_order[
+                                    #         "image_paths"
+                                    #     ]
+                                    #     if Path(path).exists()
+                                    # ]
+
+                                    # st.info(
+                                    #     "🔄 Payment verified. "
+                                    #     "Sending order to "
+                                    #     "the restaurant..."
+                                    # )
+
+                                    # notification_result = (
+                                    #     notification_manager
+                                    #     .notify_owner_with_whatsapp_images(
+                                    #         order_details=order_summary,
+                                    #         customer_info=customer_info,
+                                    #         total_amount=total_amount,
+                                    #         image_references=local_image_paths
+                                    #     )
+                                    # )
+
+                                    # st.sidebar.write(
+                                    #     "📊 Notification Results:"
+                                    # )
+
+                                    # st.sidebar.write(
+                                    #     "Pushover: "
+                                    #     f"{'✅' if notification_result.get('pushover') else '❌'}"
+                                    # )
+
+                                    # st.sidebar.write(
+                                    #     "Email: "
+                                    #     f"{'✅' if notification_result.get('email') else '❌'}"
+                                    # )
+
+                                    # st.sidebar.write(
+                                    #     "Images Sent: "
+                                    #     f"{notification_result.get('images_found', 0)}"
+                                    # )
+
+                                    # # -------------------------------------------------
+                                    # # STEP 8 — NOTIFICATION RESULT
+                                    # # -------------------------------------------------
+
+                                    # if (
+                                    #     notification_result.get(
+                                    #         'pushover'
+                                    #     )
+                                    #     or
+                                    #     notification_result.get(
+                                    #         'email'
+                                    #     )
+                                    # ):
+
+                                    #     user_session[
+                                    #         'notification_sent'
+                                    #     ] = True
+
+                                    #     user_session[
+                                    #         'order_status'
+                                    #     ] = 'NOTIFICATION_SENT'
+
+                                    #     st.session_state[
+                                    #         'notification_sent'
+                                    #     ] = True
+
+                                    #     st.success(
+                                    #         "✅ Payment confirmed — "
+                                    #         "order sent to restaurant."
+                                    #     )
+
+                                    # else:
+
+                                    #     st.error(
+                                    #         "❌ Payment was verified, "
+                                    #         "but the restaurant "
+                                    #         "notification could not "
+                                    #         "be sent."
+                                    #     )
 
 
 

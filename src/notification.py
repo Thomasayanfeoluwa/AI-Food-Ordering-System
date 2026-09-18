@@ -1,9 +1,11 @@
 import os
 import smtplib
-import requests
-from pathlib import Path
 from email.message import EmailMessage
 from mimetypes import guess_type
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import requests
 from dotenv import load_dotenv
 
 
@@ -11,165 +13,459 @@ load_dotenv()
 
 
 class NotificationManager:
+    """
+    Handles owner notifications for customer orders.
 
-    def __init__(self):
-        # SMTP email configuration
+    Notification channels:
+        - Pushover
+        - SMTP email
+
+    The existing method
+    notify_owner_with_whatsapp_images()
+    is intentionally preserved so the existing
+    Streamlit application does not need to change.
+    """
+
+    def __init__(self) -> None:
+        # ---------------------------------------------------------
+        # Determine the project root.
+        #
+        # This assumes this file is located somewhere inside
+        # the project and that the images folder is at the
+        # project root.
+        # ---------------------------------------------------------
+
+        self.project_root = Path(__file__).resolve().parent
+
+        self.images_folder = self.project_root / "images"
+
+        # ---------------------------------------------------------
+        # SMTP configuration
+        # ---------------------------------------------------------
+
         self.smtp_address = os.environ.get(
             "EMAIL_PROVIDER_SMTP_ADDRESS",
-            "smtp.gmail.com"
+            "smtp.gmail.com",
+        ).strip()
+
+        self.smtp_port = int(
+            os.environ.get(
+                "EMAIL_PROVIDER_SMTP_PORT",
+                "587",
+            )
         )
-        self.email = os.environ.get("MANAGER_EMAIL")
-        self.email_password = os.environ.get("MANAGER_EMAIL_PASSWORD")
 
+        self.email = os.environ.get(
+            "MANAGER_EMAIL"
+        )
+
+        self.email_password = os.environ.get(
+            "MANAGER_EMAIL_PASSWORD"
+        )
+
+        # ---------------------------------------------------------
         # Pushover configuration
-        self.pushover_user_key = os.environ.get("PUSHOVER_USER_KEY")
-        self.pushover_api_token = os.environ.get("PUSHOVER_API_TOKEN")
+        # ---------------------------------------------------------
 
-        self.pushover_url = "https://api.pushover.net/1/messages.json"
+        self.pushover_user_key = os.environ.get(
+            "PUSHOVER_USER_KEY"
+        )
 
-        if self.pushover_user_key and self.pushover_api_token:
-            print("Pushover credentials loaded successfully")
+        self.pushover_api_token = os.environ.get(
+            "PUSHOVER_API_TOKEN"
+        )
+
+        self.pushover_url = (
+            "https://api.pushover.net/1/messages.json"
+        )
+
+        # ---------------------------------------------------------
+        # Configuration messages
+        # ---------------------------------------------------------
+
+        if (
+            self.pushover_user_key
+            and self.pushover_api_token
+        ):
+            print(
+                "Pushover credentials loaded successfully."
+            )
         else:
-            print("Pushover credentials not found. Pushover disabled.")
+            print(
+                "Pushover credentials not found. "
+                "Pushover disabled."
+            )
 
-    def _get_local_image_path(self, image_reference):
+        if self.email and self.email_password:
+            print(
+                "Email credentials loaded successfully."
+            )
+        else:
+            print(
+                "Email credentials not found. "
+                "Email notifications disabled."
+            )
+
+    # =============================================================
+    # Helper methods
+    # =============================================================
+
+    @staticmethod
+    def _safe_response_json(
+        response: requests.Response,
+    ) -> Optional[Dict[str, Any]]:
         """
-        Find an order image inside the project's images folder.
+        Safely parse a JSON HTTP response.
+
+        Returns:
+            Parsed dictionary if valid JSON is returned.
+            None otherwise.
         """
 
-        images_folder = Path("images")
+        try:
+            data = response.json()
 
-        # Direct path
-        if Path(image_reference).exists():
-            return Path(image_reference)
+            if isinstance(data, dict):
+                return data
 
-        filename = Path(image_reference).name
-
-        possible_extensions = [
-            ".jpg",
-            ".jpeg",
-            ".png",
-            ".webp"
-        ]
-
-        for ext in possible_extensions:
-
-            # Original filename
-            test_path = images_folder / filename
-
-            if test_path.exists():
-                return test_path
-
-            # Filename with detected extension
-            name_without_ext = Path(filename).stem
-            test_path = images_folder / f"{name_without_ext}{ext}"
-
-            if test_path.exists():
-                return test_path
-
-            # Lowercase filename
-            test_path = images_folder / f"{name_without_ext.lower()}{ext}"
-
-            if test_path.exists():
-                return test_path
+        except ValueError:
+            pass
 
         return None
 
-    def send_pushover(self, message_body, image_paths=None):
+    @staticmethod
+    def _get_image_mime_type(
+        image_path: Path,
+    ) -> str:
+        """
+        Determine the MIME type of an image.
+
+        Falls back to image/jpeg if the extension cannot
+        be identified.
+        """
+
+        mime_type, _ = guess_type(image_path.name)
+
+        if mime_type and mime_type.startswith("image/"):
+            return mime_type
+
+        return "image/jpeg"
+
+    @staticmethod
+    def _is_valid_image_path(
+        image_path: Path,
+    ) -> bool:
+        """
+        Check that a path exists and is a regular file.
+        """
+
+        return (
+            image_path.exists()
+            and image_path.is_file()
+        )
+
+    def _get_local_image_path(
+        self,
+        image_reference: Any,
+    ) -> Optional[Path]:
+        """
+        Find an order image inside the project's images folder.
+
+        Supports:
+            - direct file paths
+            - filenames
+            - filenames with/without extensions
+            - case-insensitive filename matching
+        """
+
+        if not image_reference:
+            return None
+
+        image_reference = str(image_reference).strip()
+
+        if not image_reference:
+            return None
+
+        # ---------------------------------------------------------
+        # 1. Direct path
+        # ---------------------------------------------------------
+
+        direct_path = Path(image_reference)
+
+        if self._is_valid_image_path(direct_path):
+            return direct_path.resolve()
+
+        # ---------------------------------------------------------
+        # 2. Search inside the project's images folder
+        # ---------------------------------------------------------
+
+        if not self.images_folder.exists():
+            return None
+
+        if not self.images_folder.is_dir():
+            return None
+
+        filename = Path(image_reference).name
+
+        if not filename:
+            return None
+
+        # ---------------------------------------------------------
+        # Exact filename match
+        # ---------------------------------------------------------
+
+        exact_path = self.images_folder / filename
+
+        if self._is_valid_image_path(exact_path):
+            return exact_path.resolve()
+
+        # ---------------------------------------------------------
+        # Case-insensitive filename match
+        # ---------------------------------------------------------
+
+        filename_lower = filename.lower()
+
+        try:
+            for candidate in self.images_folder.iterdir():
+
+                if not candidate.is_file():
+                    continue
+
+                if candidate.name.lower() == filename_lower:
+                    return candidate.resolve()
+
+        except OSError as exc:
+            print(
+                f"Could not read images directory: {exc}"
+            )
+            return None
+
+        # ---------------------------------------------------------
+        # Search using the filename stem.
+        #
+        # Example:
+        # burger
+        # burger.jpg
+        # burger.jpeg
+        # burger.png
+        # burger.webp
+        # ---------------------------------------------------------
+
+        stem = Path(filename).stem.lower()
+
+        supported_extensions = {
+            ".jpg",
+            ".jpeg",
+            ".png",
+            ".webp",
+        }
+
+        try:
+            for candidate in self.images_folder.iterdir():
+
+                if not candidate.is_file():
+                    continue
+
+                if candidate.suffix.lower() not in supported_extensions:
+                    continue
+
+                if candidate.stem.lower() == stem:
+                    return candidate.resolve()
+
+        except OSError as exc:
+            print(
+                f"Could not search images directory: {exc}"
+            )
+            return None
+
+        return None
+
+    # =============================================================
+    # Pushover
+    # =============================================================
+
+    def send_pushover(
+        self,
+        message_body: str,
+        image_paths: Optional[List[Path]] = None,
+    ) -> bool:
         """
         Send an order notification through Pushover.
 
-        The first image is attached directly to the notification.
+        Pushover supports one attachment per notification.
+        Therefore:
+            - The first image is attached to the main notification.
+            - Additional images are sent as separate notifications.
+
+        Returns:
+            True only if the main notification and all additional
+            image notifications are successfully sent.
         """
 
-        if not self.pushover_user_key or not self.pushover_api_token:
-            print("Pushover failed: credentials not configured")
+        if (
+            not self.pushover_user_key
+            or not self.pushover_api_token
+        ):
+            print(
+                "Pushover failed: credentials not configured."
+            )
             return False
+
+        image_paths = image_paths or []
+
+        # Only retain valid files.
+        valid_image_paths = [
+            path
+            for path in image_paths
+            if self._is_valid_image_path(path)
+        ]
 
         try:
             data = {
                 "token": self.pushover_api_token,
                 "user": self.pushover_user_key,
                 "title": "🚨 NEW CUSTOMER ORDER",
-                "message": message_body
+                "message": message_body,
             }
 
-            files = None
+            # -----------------------------------------------------
+            # Main notification attachment
+            # -----------------------------------------------------
 
-            # Pushover supports one attachment per notification.
-            # Send the first food image with the main notification.
-            if image_paths:
-                first_image = image_paths[0]
+            if valid_image_paths:
 
-                if first_image.exists():
-                    mime_type, _ = guess_type(first_image.name)
+                first_image = valid_image_paths[0]
 
-                    if not mime_type:
-                        mime_type = "image/jpeg"
+                mime_type = self._get_image_mime_type(
+                    first_image
+                )
 
-                    files = {
-                        "attachment": (
-                            first_image.name,
-                            open(first_image, "rb"),
-                            mime_type
-                        )
-                    }
+                data["attachment_type"] = mime_type
 
-                    data["attachment_type"] = mime_type
+                with open(
+                    first_image,
+                    "rb",
+                ) as image_file:
 
-            try:
+                    response = requests.post(
+                        self.pushover_url,
+                        data=data,
+                        files={
+                            "attachment": (
+                                first_image.name,
+                                image_file,
+                                mime_type,
+                            )
+                        },
+                        timeout=30,
+                    )
+
+            else:
+
                 response = requests.post(
                     self.pushover_url,
                     data=data,
-                    files=files,
-                    timeout=30
+                    timeout=30,
                 )
-            finally:
-                if files:
-                    files["attachment"][1].close()
 
-            if response.status_code == 200:
-                response_data = response.json()
+            # -----------------------------------------------------
+            # Validate main notification response
+            # -----------------------------------------------------
 
-                if response_data.get("status") == 1:
-                    print("Pushover notification sent successfully")
+            response_data = self._safe_response_json(
+                response
+            )
 
-                    # Send additional images as separate notifications.
-                    if image_paths and len(image_paths) > 1:
-                        for image_path in image_paths[1:]:
-                            self._send_pushover_image(
-                                image_path,
-                                "Additional order image"
-                            )
-
-                    return True
+            if (
+                response.status_code != 200
+                or not response_data
+                or response_data.get("status") != 1
+            ):
+                print(
+                    "Pushover failed: "
+                    f"HTTP {response.status_code} - "
+                    f"{response.text}"
+                )
+                return False
 
             print(
-                f"Pushover failed: HTTP {response.status_code} - "
-                f"{response.text}"
+                "Pushover notification sent successfully."
+            )
+
+            # -----------------------------------------------------
+            # Additional images
+            # -----------------------------------------------------
+
+            additional_images_sent = True
+
+            for image_path in valid_image_paths[1:]:
+
+                success = self._send_pushover_image(
+                    image_path,
+                    "Additional order image",
+                )
+
+                if not success:
+                    additional_images_sent = False
+
+            return additional_images_sent
+
+        except requests.exceptions.Timeout:
+            print(
+                "Pushover failed: request timed out."
             )
             return False
 
-        except Exception as e:
-            print(f"Pushover failed: {e}")
+        except requests.exceptions.ConnectionError:
+            print(
+                "Pushover failed: could not connect "
+                "to Pushover."
+            )
             return False
 
-    def _send_pushover_image(self, image_path, message):
+        except requests.exceptions.RequestException as exc:
+            print(
+                f"Pushover failed: network error: {exc}"
+            )
+            return False
+
+        except OSError as exc:
+            print(
+                f"Pushover failed: image/file error: {exc}"
+            )
+            return False
+
+        except Exception as exc:
+            print(
+                f"Pushover failed: unexpected error: {exc}"
+            )
+            return False
+
+    def _send_pushover_image(
+        self,
+        image_path: Path,
+        message: str,
+    ) -> bool:
         """
-        Send an additional food image as a separate Pushover notification.
+        Send one additional image as a separate Pushover
+        notification.
         """
 
-        if not image_path.exists():
-            print(f"Pushover image not found: {image_path}")
+        if not self._is_valid_image_path(image_path):
+            print(
+                f"Pushover image not found: {image_path}"
+            )
             return False
 
         try:
-            mime_type, _ = guess_type(image_path.name)
+            mime_type = self._get_image_mime_type(
+                image_path
+            )
 
-            if not mime_type:
-                mime_type = "image/jpeg"
-
-            with open(image_path, "rb") as image_file:
+            with open(
+                image_path,
+                "rb",
+            ) as image_file:
 
                 response = requests.post(
                     self.pushover_url,
@@ -178,158 +474,347 @@ class NotificationManager:
                         "user": self.pushover_user_key,
                         "title": "📸 ORDER IMAGE",
                         "message": message,
-                        "attachment_type": mime_type
+                        "attachment_type": mime_type,
                     },
                     files={
                         "attachment": (
                             image_path.name,
                             image_file,
-                            mime_type
+                            mime_type,
                         )
                     },
-                    timeout=30
+                    timeout=30,
                 )
 
-            if response.status_code == 200:
-                response_data = response.json()
+            response_data = self._safe_response_json(
+                response
+            )
 
-                if response_data.get("status") == 1:
-                    print(
-                        f"Pushover image sent successfully: "
-                        f"{image_path.name}"
-                    )
-                    return True
+            if (
+                response.status_code == 200
+                and response_data
+                and response_data.get("status") == 1
+            ):
+                print(
+                    "Pushover image sent successfully: "
+                    f"{image_path.name}"
+                )
+                return True
 
             print(
-                f"Pushover image failed: HTTP {response.status_code} - "
+                "Pushover image failed: "
+                f"HTTP {response.status_code} - "
                 f"{response.text}"
             )
             return False
 
-        except Exception as e:
-            print(f"Pushover image failed: {e}")
+        except requests.exceptions.Timeout:
+            print(
+                "Pushover image failed: request timed out."
+            )
             return False
 
-    def send_emails(self, email_list, email_body, image_paths=None):
+        except requests.exceptions.ConnectionError:
+            print(
+                "Pushover image failed: "
+                "could not connect to Pushover."
+            )
+            return False
+
+        except requests.exceptions.RequestException as exc:
+            print(
+                f"Pushover image failed: network error: {exc}"
+            )
+            return False
+
+        except OSError as exc:
+            print(
+                f"Pushover image failed: file error: {exc}"
+            )
+            return False
+
+        except Exception as exc:
+            print(
+                f"Pushover image failed: unexpected error: {exc}"
+            )
+            return False
+
+    # =============================================================
+    # Email
+    # =============================================================
+
+    def send_emails(
+        self,
+        email_list: List[str],
+        email_body: str,
+        image_paths: Optional[List[Path]] = None,
+    ) -> bool:
         """
-        Send order email with food images attached.
+        Send an order email with food images attached.
+
+        Returns:
+            True if the SMTP connection succeeds and every
+            recipient receives the message successfully.
         """
 
-        if not self.email or not self.email_password:
-            print("Email failed: Email credentials not configured")
+        if (
+            not self.email
+            or not self.email_password
+        ):
+            print(
+                "Email failed: email credentials not configured."
+            )
             return False
+
+        if not email_list:
+            print(
+                "Email failed: no recipient email addresses configured."
+            )
+            return False
+
+        # ---------------------------------------------------------
+        # Clean and validate recipient list
+        # ---------------------------------------------------------
+
+        cleaned_emails = []
+
+        for email in email_list:
+
+            if not isinstance(email, str):
+                continue
+
+            email = email.strip()
+
+            if email:
+                cleaned_emails.append(email)
+
+        if not cleaned_emails:
+            print(
+                "Email failed: no valid recipient email addresses."
+            )
+            return False
+
+        image_paths = image_paths or []
+
+        valid_image_paths = [
+            path
+            for path in image_paths
+            if self._is_valid_image_path(path)
+        ]
+
+        successful_recipients = 0
 
         try:
-            # Remove whitespace and empty values from email addresses.
-            email_list = [
-                email.strip()
-                for email in email_list
-                if email.strip()
-            ]
 
-            if not email_list:
-                print("Email failed: No recipient email addresses configured")
-                return False
+            with smtplib.SMTP(
+                self.smtp_address,
+                self.smtp_port,
+                timeout=30,
+            ) as connection:
 
-            with smtplib.SMTP(self.smtp_address, 587) as connection:
-
+                connection.ehlo()
                 connection.starttls()
+                connection.ehlo()
 
                 connection.login(
                     self.email,
-                    self.email_password
+                    self.email_password,
                 )
 
-                for recipient in email_list:
+                for recipient in cleaned_emails:
 
                     message = EmailMessage()
 
                     message["From"] = self.email
                     message["To"] = recipient
-                    message["Subject"] = "New Delivery Order!"
+                    message["Subject"] = (
+                        "New Delivery Order!"
+                    )
 
                     message.set_content(email_body)
 
-                    # Attach all available food images.
-                    if image_paths:
+                    # -------------------------------------------------
+                    # Attach all available food images
+                    # -------------------------------------------------
 
-                        for image_path in image_paths:
+                    for image_path in valid_image_paths:
 
-                            if not image_path.exists():
-                                print(
-                                    f"Email attachment not found: "
-                                    f"{image_path}"
+                        mime_type = self._get_image_mime_type(
+                            image_path
+                        )
+
+                        maintype, subtype = mime_type.split(
+                            "/",
+                            1,
+                        )
+
+                        try:
+
+                            with open(
+                                image_path,
+                                "rb",
+                            ) as image_file:
+
+                                image_data = (
+                                    image_file.read()
                                 )
-                                continue
-
-                            mime_type, _ = guess_type(image_path.name)
-
-                            if mime_type:
-                                maintype, subtype = mime_type.split(
-                                    "/",
-                                    1
-                                )
-                            else:
-                                maintype = "image"
-                                subtype = "jpeg"
-
-                            with open(image_path, "rb") as image_file:
-                                image_data = image_file.read()
 
                             message.add_attachment(
                                 image_data,
                                 maintype=maintype,
                                 subtype=subtype,
-                                filename=image_path.name
+                                filename=image_path.name,
+                            )
+
+                        except OSError as exc:
+
+                            print(
+                                "Email attachment skipped: "
+                                f"{image_path} - {exc}"
                             )
 
                     connection.send_message(message)
 
-                    print(f"Email sent to: {recipient}")
+                    successful_recipients += 1
 
-            return True
+                    print(
+                        f"Email sent to: {recipient}"
+                    )
 
-        except Exception as e:
-            print(f"Email failed: {e}")
+            return (
+                successful_recipients
+                == len(cleaned_emails)
+            )
+
+        except smtplib.SMTPAuthenticationError:
+            print(
+                "Email failed: SMTP authentication failed. "
+                "Check MANAGER_EMAIL and "
+                "MANAGER_EMAIL_PASSWORD."
+            )
             return False
+
+        except smtplib.SMTPConnectError:
+            print(
+                "Email failed: could not connect to "
+                "the SMTP server."
+            )
+            return False
+
+        except smtplib.SMTPException as exc:
+            print(
+                f"Email failed: SMTP error: {exc}"
+            )
+            return False
+
+        except OSError as exc:
+            print(
+                f"Email failed: file/system error: {exc}"
+            )
+            return False
+
+        except Exception as exc:
+            print(
+                f"Email failed: unexpected error: {exc}"
+            )
+            return False
+
+    # =============================================================
+    # Existing application entry point
+    # =============================================================
 
     def notify_owner_with_whatsapp_images(
         self,
-        order_details,
-        customer_info,
-        total_amount,
-        image_references
-    ):
+        order_details: str,
+        customer_info: Dict[str, Any],
+        total_amount: float,
+        image_references: List[Any],
+    ) -> Dict[str, Any]:
         """
         Existing application entry point.
 
         The method name is intentionally preserved so the existing
         Streamlit application does not need to be changed.
 
-        Notifications are now sent through:
-        - Pushover
-        - SMTP email
+        Notifications are sent through:
+            - Pushover
+            - SMTP email
+
+        Returns:
+            {
+                "pushover": bool,
+                "email": bool,
+                "images_found": int
+            }
         """
 
-        actual_image_paths = []
+        customer_info = (
+            customer_info
+            if isinstance(customer_info, dict)
+            else {}
+        )
 
-        for img_ref in image_references:
+        image_references = (
+            image_references
+            if isinstance(image_references, list)
+            else []
+        )
 
-            img_path = self._get_local_image_path(img_ref)
+        # ---------------------------------------------------------
+        # Resolve image references
+        # ---------------------------------------------------------
 
-            if img_path:
-                actual_image_paths.append(img_path)
-                print(f"✅ Found image: {img_path}")
+        actual_image_paths: List[Path] = []
+
+        for image_reference in image_references:
+
+            image_path = self._get_local_image_path(
+                image_reference
+            )
+
+            if image_path:
+
+                actual_image_paths.append(
+                    image_path
+                )
+
+                print(
+                    f"✅ Found image: {image_path}"
+                )
+
             else:
-                print(f"❌ Image not found: {img_ref}")
+
+                print(
+                    f"❌ Image not found: "
+                    f"{image_reference}"
+                )
+
+        # ---------------------------------------------------------
+        # Base notification
+        # ---------------------------------------------------------
+
+        customer_name = customer_info.get(
+            "name",
+            "Not provided",
+        )
+
+        customer_phone = customer_info.get(
+            "phone",
+            "Not provided",
+        )
+
+        customer_address = customer_info.get(
+            "address",
+            "Not provided",
+        )
 
         base_message = f"""
 🚨 NEW CUSTOMER ORDER 🚨
 
 CUSTOMER DETAILS:
-Name: {customer_info.get('name', 'Not provided')}
-Phone: {customer_info.get('phone', 'Not provided')}
-Address: {customer_info.get('address', 'Not provided')}
+Name: {customer_name}
+Phone: {customer_phone}
+Address: {customer_address}
 
 ORDER TOTAL: ₦{total_amount:,.2f}
 
@@ -338,32 +823,32 @@ ORDER DETAILS:
 
 ACTION REQUIRED:
 Please prepare this order immediately!
-"""
+""".strip()
 
         if actual_image_paths:
+
             base_message += (
-                f"\n\nORDER IMAGES: "
-                f"{len(actual_image_paths)} image(s) attached."
+                "\n\nORDER IMAGES: "
+                f"{len(actual_image_paths)} "
+                "image(s) attached."
             )
 
-        # ---------------------------------------------------------
+        # =========================================================
         # Pushover
-        # ---------------------------------------------------------
+        # =========================================================
 
         pushover_sent = self.send_pushover(
             base_message,
-            actual_image_paths
+            actual_image_paths,
         )
 
-        # ---------------------------------------------------------
+        # =========================================================
         # Email
-        # ---------------------------------------------------------
-
-        email_sent = False
+        # =========================================================
 
         owner_emails = os.environ.get(
             "OWNER_EMAILS",
-            ""
+            "",
         ).split(",")
 
         owner_emails = [
@@ -372,15 +857,17 @@ Please prepare this order immediately!
             if email.strip()
         ]
 
+        email_sent = False
+
         if owner_emails:
 
             email_body = f"""
 NEW ORDER RECEIVED!
 
 CUSTOMER INFORMATION:
-Name: {customer_info.get('name', 'Not provided')}
-Phone: {customer_info.get('phone', 'Not provided')}
-Address: {customer_info.get('address', 'Not provided')}
+Name: {customer_name}
+Phone: {customer_phone}
+Address: {customer_address}
 
 ORDER TOTAL: ₦{total_amount:,.2f}
 
@@ -391,20 +878,27 @@ ORDER CONTAINS:
 {len(actual_image_paths)} food image(s) attached.
 
 Please prepare the order immediately!
-"""
+""".strip()
 
             email_sent = self.send_emails(
                 owner_emails,
                 email_body,
-                actual_image_paths
+                actual_image_paths,
             )
 
-        # ---------------------------------------------------------
+        else:
+
+            print(
+                "Email notification skipped: "
+                "OWNER_EMAILS is not configured."
+            )
+
+        # =========================================================
         # Return notification status
-        # ---------------------------------------------------------
+        # =========================================================
 
         return {
             "pushover": pushover_sent,
             "email": email_sent,
-            "images_found": len(actual_image_paths)
+            "images_found": len(actual_image_paths),
         }
