@@ -2,6 +2,9 @@ from google import genai
 from google.genai import types
 import streamlit as st
 from src.prompt import system_instruction
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from google.genai.errors import ServerError
+
 
 
 # Load Gemini API key from Streamlit Secrets
@@ -45,7 +48,12 @@ def convert_messages_to_gemini(messages):
 
     return history
 
-
+@retry(
+    stop=stop_after_attempt(3), 
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type(ServerError),
+    reraise=True
+)
 def order_request(messages, model="gemini-3.6-flash", temperature=0):
     """
     Send the complete conversation to Gemini and return
