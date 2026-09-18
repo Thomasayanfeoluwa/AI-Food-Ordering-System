@@ -1,3 +1,4 @@
+from src import prompt
 import streamlit as st
 import json
 import os
@@ -179,8 +180,15 @@ def initialize_session_state():
         st.session_state.conversation = messages.copy()
     if 'notification_sent' not in st.session_state:
         st.session_state.notification_sent = False
+
     if 'payment_processed' not in st.session_state:
         st.session_state.payment_processed = False
+
+    if 'payment_reference' not in st.session_state:
+        st.session_state.payment_reference = None
+
+    if 'pending_order' not in st.session_state:
+        st.session_state.pending_order = None
     if 'customer_info' not in st.session_state:
         st.session_state.customer_info = {
             'name': '',
@@ -572,15 +580,14 @@ def main():
             st.session_state.customer_info_updated = True
             st.success("✅ Information updated successfully!")
             st.rerun()
-        
+
         # Display current order status
         st.subheader("Order Status")
+
         if st.session_state.notification_sent:
-            st.success("✅ Order Confirmed!")
-            if st.session_state.payment_processed:
-                st.success("✅ Payment Link Sent!")
-            else:
-                st.info("🔄 Awaiting Payment")
+            st.success("✅ Payment confirmed — order sent to restaurant.")
+        elif st.session_state.payment_processed:
+            st.info("💳 Payment link created — awaiting payment verification.")
         else:
             st.info("🔄 Order in progress...")
         
@@ -590,6 +597,8 @@ def main():
             st.session_state.conversation = messages.copy()
             st.session_state.notification_sent = False
             st.session_state.payment_processed = False
+            st.session_state.payment_reference = None
+            st.session_state.pending_order = None
             st.session_state.customer_info = {
                 'name': '',
                 'phone': '',
@@ -620,7 +629,9 @@ def main():
                 'address': None,
                 'email': None,
                 'notification_sent': False,
-                'payment_processed': False
+                'payment_processed': False,
+                'payment_reference': None,
+                'pending_order': None
             }
         
         # Extract customer info from user message
@@ -710,113 +721,391 @@ def main():
         st.sidebar.write(f"Phone Provided: {st.session_state.user_sessions[user_id]['phone'] is not None}")
         st.sidebar.write(f"Notification Sent: {st.session_state.user_sessions[user_id]['notification_sent']}")
         
-        # Check if this is the FINAL confirmation (FIXED detection)
-        if (is_final_confirmation(response) and 
+        # # Check if this is the FINAL confirmation (FIXED detection)
+        # if (is_final_confirmation(response) and 
+        #     not st.session_state.user_sessions[user_id]['notification_sent'] and
+        #     st.session_state.user_sessions[user_id]['phone'] is not None):
+            
+        #     total_amount = extract_total_amount(response)
+            
+        #     if total_amount > 0:
+        #         # Mark notification as sent to prevent duplicates
+        #         st.session_state.user_sessions[user_id]['notification_sent'] = True
+        #         st.session_state.notification_sent = True
+                
+        #         customer_info = st.session_state.user_sessions[user_id]
+                
+        #         # Get order images for manager notification
+        #         order_images = image_service.get_images_for_order(response)
+                
+        #         # Use the FULL LLM response as the order summary - NO MORE REDUNDANT FORMATTING
+        #         order_summary = response  # This is the complete order confirmation from LLM
+                
+        #         # Send ENHANCED notification with ACTUAL IMAGES FOR WHATSAPP ONLY
+        #         st.info("🔄 Sending order confirmation with images to restaurant...")
+
+        #         # Convert image URLs to local paths that the notification manager can use
+        #         local_image_paths = []
+        #         for img_url in order_images:
+        #             if img_url.startswith(('http://', 'https://')):
+        #                 # This is a URL - we can't use it directly, skip or download
+        #                 continue
+        #             else:
+        #                 # This is a local path - convert to Path object
+        #                 img_path = Path(img_url)
+        #                 if img_path.exists():
+        #                     local_image_paths.append(img_path)
+        #                 else:
+        #                     # Try images folder
+        #                     images_folder = Path("images")
+        #                     possible_path = images_folder / Path(img_url).name
+        #                     if possible_path.exists():
+        #                         local_image_paths.append(possible_path)
+
+        #         # Use the notification method with food images
+        #         notification_result = notification_manager.notify_owner_with_whatsapp_images(
+        #             order_details=order_summary,  # Use the full LLM response
+        #             customer_info=customer_info,
+        #             total_amount=total_amount,
+        #             image_references=local_image_paths  # Pass actual local image paths
+        #         )
+
+        #         st.sidebar.write(f"📊 Notification Results:")
+        #         st.sidebar.write(f"   Pushover: {'✅' if notification_result['pushover'] else '❌'}")
+        #         st.sidebar.write(f"   Email: {'✅' if notification_result['email'] else '❌'}")
+        #         st.sidebar.write(f"   Images Sent to Pushover: {notification_result['images_found']}")
+                
+        #         # Generate payment link for customer - USING DIRECT API CALL
+        #         st.sidebar.info("🔄 Creating payment link...")
+                
+        #         payment_response = initiate_paystack_payment_direct(
+        #             email=customer_info.get('email', 'customer@example.com'),
+        #             amount=total_amount,  # This now uses the EXACT amount from LLM
+        #             reference=f"DD{user_id}{int(time.time())}",
+        #             metadata={
+        #                 "customer_name": customer_info.get('name'),
+        #                 "phone": customer_info.get('phone'),
+        #                 "address": customer_info.get('address'),
+        #                 "order_summary": order_summary  # Full LLM response
+        #             }
+        #         )
+                
+        #         st.sidebar.write(f"Payment Response Status: {payment_response.get('status')}")
+                
+        #         if payment_response and payment_response.get('status'):
+        #             payment_url = payment_response['data']['authorization_url']
+        #             st.sidebar.success("✅ Payment link created!")
+                    
+        #             # Display payment section - UPDATED FOR BETTER VISIBILITY
+        #             st.markdown(f"""
+        #             <div class="payment-section">
+        #                 <h3>💰 Payment Required</h3>
+        #                 <div class="payment-amount">Your Order Total: ₦{total_amount:,.2f}</div>
+        #                 <div class="payment-instruction">Please complete your payment using this secure link:</div>
+        #                 <p><a href="{payment_url}" target="_blank" style="background-color: #4CAF50; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; font-size: 16px; font-weight: bold;">💳 Pay Now with Paystack</a></p>
+        #                 <div class="contact-info">📞 Need help? Call/WhatsApp: 08105883082</div>
+        #                 <div class="payment-instruction">✅ After payment, we'll immediately prepare your order!</div>
+        #                 <div class="delivery-time">⏰ Delivery time: 30-45 minutes</div>
+        #             </div>
+        #             """, unsafe_allow_html=True)
+                    
+        #             # Also show the payment link clearly
+        #             st.success(f"**Payment Link:** {payment_url}")
+                    
+        #             st.session_state.payment_processed = True
+        #         else:
+        #             error_msg = payment_response.get('message', 'Unknown payment error') if payment_response else 'No response from payment service'
+        #             st.error(f"Payment system error: {error_msg}")
+                    
+        #             # Fallback payment instructions - UPDATED FOR BETTER VISIBILITY
+        #             st.markdown(f"""
+        #             <div class="payment-section">
+        #                 <h3>💰 Manual Payment Required</h3>
+        #                 <div class="payment-amount">Your Order Total: ₦{total_amount:,.2f}</div>
+        #                 <div class="payment-instruction">Please contact us directly to complete payment:</div>
+        #                 <div class="contact-info">📞 Call/WhatsApp: 08105883082<br>💬 Telegram: 08105883082</div>
+        #                 <div class="payment-instruction">We'll guide you through payment and delivery immediately!</div>
+        #                 <div class="delivery-time">⏰ Delivery time: 30-45 minutes after payment</div>
+        #             </div>
+        #             """, unsafe_allow_html=True)
+
+        # Check if this is the FINAL confirmation
+        if (is_final_confirmation(response) and
             not st.session_state.user_sessions[user_id]['notification_sent'] and
             st.session_state.user_sessions[user_id]['phone'] is not None):
-            
-            total_amount = extract_total_amount(response)
-            
-            if total_amount > 0:
-                # Mark notification as sent to prevent duplicates
-                st.session_state.user_sessions[user_id]['notification_sent'] = True
-                st.session_state.notification_sent = True
-                
-                customer_info = st.session_state.user_sessions[user_id]
-                
-                # Get order images for manager notification
-                order_images = image_service.get_images_for_order(response)
-                
-                # Use the FULL LLM response as the order summary - NO MORE REDUNDANT FORMATTING
-                order_summary = response  # This is the complete order confirmation from LLM
-                
-                # Send ENHANCED notification with ACTUAL IMAGES FOR WHATSAPP ONLY
-                st.info("🔄 Sending order confirmation with images to restaurant...")
 
-                # Convert image URLs to local paths that the notification manager can use
+            total_amount = extract_total_amount(response)
+
+            if total_amount > 0:
+
+                customer_info = st.session_state.user_sessions[user_id]
+
+                # Generate a unique Paystack reference for this order
+                payment_reference = f"DD{user_id}{int(time.time())}"
+
+                # Get order images
+                order_images = image_service.get_images_for_order(response)
+
+                # Convert image references to local paths
                 local_image_paths = []
+
                 for img_url in order_images:
                     if img_url.startswith(('http://', 'https://')):
-                        # This is a URL - we can't use it directly, skip or download
                         continue
+
+                    img_path = Path(img_url)
+
+                    if img_path.exists():
+                        local_image_paths.append(img_path)
                     else:
-                        # This is a local path - convert to Path object
-                        img_path = Path(img_url)
-                        if img_path.exists():
-                            local_image_paths.append(img_path)
-                        else:
-                            # Try images folder
-                            images_folder = Path("images")
-                            possible_path = images_folder / Path(img_url).name
-                            if possible_path.exists():
-                                local_image_paths.append(possible_path)
+                        images_folder = Path("images")
+                        possible_path = images_folder / Path(img_url).name
 
-                # Use the notification method with food images
-                notification_result = notification_manager.notify_owner_with_whatsapp_images(
-                    order_details=order_summary,  # Use the full LLM response
-                    customer_info=customer_info,
-                    total_amount=total_amount,
-                    image_references=local_image_paths  # Pass actual local image paths
-                )
+                        if possible_path.exists():
+                            local_image_paths.append(possible_path)
 
-                st.sidebar.write(f"📊 Notification Results:")
-                st.sidebar.write(f"   Pushover: {'✅' if notification_result['pushover'] else '❌'}")
-                st.sidebar.write(f"   Email: {'✅' if notification_result['email'] else '❌'}")
-                st.sidebar.write(f"   Images Sent to Pushover: {notification_result['images_found']}")
-                
-                # Generate payment link for customer - USING DIRECT API CALL
-                st.sidebar.info("🔄 Creating payment link...")
-                
-                payment_response = initiate_paystack_payment_direct(
-                    email=customer_info.get('email', 'customer@example.com'),
-                    amount=total_amount,  # This now uses the EXACT amount from LLM
-                    reference=f"DD{user_id}{int(time.time())}",
+                # Store the pending order BEFORE creating payment
+                pending_order = {
+                    "customer_info": customer_info.copy(),
+                    "total_amount": total_amount,
+                    "order_summary": response,
+                    "image_paths": [str(path) for path in local_image_paths],
+                    "payment_reference": payment_reference
+                }
+
+                st.session_state.pending_order = pending_order
+                st.session_state.payment_reference = payment_reference
+
+                st.session_state.user_sessions[user_id]['pending_order'] = pending_order
+                st.session_state.user_sessions[user_id]['payment_reference'] = payment_reference
+
+                # ---------------------------------------------------------
+                # INITIALIZE PAYSTACK PAYMENT
+                # ---------------------------------------------------------
+
+                st.sidebar.info("🔄 Creating secure Paystack payment...")
+
+                payment_response = payment_service.initiate_payment(
+                    email=customer_info.get('email') or 'customer@example.com',
+                    amount=total_amount,
+                    reference=payment_reference,
                     metadata={
                         "customer_name": customer_info.get('name'),
                         "phone": customer_info.get('phone'),
                         "address": customer_info.get('address'),
-                        "order_summary": order_summary  # Full LLM response
+                        "order_reference": payment_reference
                     }
                 )
-                
-                st.sidebar.write(f"Payment Response Status: {payment_response.get('status')}")
-                
-                if payment_response and payment_response.get('status'):
+
+                st.sidebar.write(
+                    f"Payment Response Status: {payment_response.get('status')}"
+                )
+
+                if payment_response.get('status'):
+
                     payment_url = payment_response['data']['authorization_url']
-                    st.sidebar.success("✅ Payment link created!")
-                    
-                    # Display payment section - UPDATED FOR BETTER VISIBILITY
+
+                    st.session_state.payment_processed = True
+                    st.session_state.user_sessions[user_id]['payment_processed'] = True
+
+                    st.sidebar.success("✅ Payment link created.")
+
                     st.markdown(f"""
                     <div class="payment-section">
                         <h3>💰 Payment Required</h3>
-                        <div class="payment-amount">Your Order Total: ₦{total_amount:,.2f}</div>
-                        <div class="payment-instruction">Please complete your payment using this secure link:</div>
-                        <p><a href="{payment_url}" target="_blank" style="background-color: #4CAF50; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; font-size: 16px; font-weight: bold;">💳 Pay Now with Paystack</a></p>
-                        <div class="contact-info">📞 Need help? Call/WhatsApp: 08105883082</div>
-                        <div class="payment-instruction">✅ After payment, we'll immediately prepare your order!</div>
-                        <div class="delivery-time">⏰ Delivery time: 30-45 minutes</div>
+
+                        <div class="payment-amount">
+                            Your Order Total: ₦{total_amount:,.2f}
+                        </div>
+
+                        <div class="payment-instruction">
+                            Please complete your payment using the secure Paystack link below.
+                        </div>
+
+                        <p>
+                            <a href="{payment_url}"
+                            target="_blank"
+                            style="background-color: #4CAF50;
+                                    color: white;
+                                    padding: 12px 24px;
+                                    text-decoration: none;
+                                    border-radius: 6px;
+                                    display: inline-block;
+                                    font-size: 16px;
+                                    font-weight: bold;">
+                                💳 Pay Now with Paystack
+                            </a>
+                        </p>
+
+                        <div class="payment-instruction">
+                            After completing payment, return here and click
+                            <strong>Verify Payment</strong>.
+                        </div>
+
+                        <div class="delivery-time">
+                            ⏰ Delivery time: 30–45 minutes after payment confirmation
+                        </div>
                     </div>
                     """, unsafe_allow_html=True)
-                    
-                    # Also show the payment link clearly
-                    st.success(f"**Payment Link:** {payment_url}")
-                    
-                    st.session_state.payment_processed = True
+
+                    st.success(f"Payment link created for ₦{total_amount:,.2f}")
+
                 else:
-                    error_msg = payment_response.get('message', 'Unknown payment error') if payment_response else 'No response from payment service'
+
+                    error_msg = payment_response.get(
+                        'message',
+                        'Unknown payment error'
+                    )
+
                     st.error(f"Payment system error: {error_msg}")
-                    
-                    # Fallback payment instructions - UPDATED FOR BETTER VISIBILITY
-                    st.markdown(f"""
-                    <div class="payment-section">
-                        <h3>💰 Manual Payment Required</h3>
-                        <div class="payment-amount">Your Order Total: ₦{total_amount:,.2f}</div>
-                        <div class="payment-instruction">Please contact us directly to complete payment:</div>
-                        <div class="contact-info">📞 Call/WhatsApp: 08105883082<br>💬 Telegram: 08105883082</div>
-                        <div class="payment-instruction">We'll guide you through payment and delivery immediately!</div>
-                        <div class="delivery-time">⏰ Delivery time: 30-45 minutes after payment</div>
-                    </div>
-                    """, unsafe_allow_html=True)
+
+            else:
+                st.error("❌ Could not determine a valid order total.")
+
+
+    # ---------------------------------------------------------
+    # PAYMENT VERIFICATION
+    # ---------------------------------------------------------
+
+    pending_order = st.session_state.get('pending_order')
+    payment_reference = st.session_state.get('payment_reference')
+    user_id = st.session_state.current_session_id
+
+    if (
+        pending_order
+        and payment_reference
+        and not st.session_state.notification_sent
+    ):
+
+        st.subheader("💳 Payment Verification")
+
+        st.info(
+            "After completing payment on Paystack, "
+            "return here and verify your payment."
+        )
+
+        if st.button("🔍 Verify Payment", type="primary"):
+
+            with st.spinner("Verifying payment with Paystack..."):
+
+                verification = payment_service.verify_payment(
+                    payment_reference
+                )
+
+            if verification.get("status"):
+
+                transaction_data = verification.get("data", {})
+
+                # Paystack returns the amount in kobo
+                paid_amount = transaction_data.get("amount", 0) / 100
+
+                expected_amount = pending_order["total_amount"]
+
+                transaction_reference = transaction_data.get(
+                    "reference"
+                )
+
+                transaction_currency = transaction_data.get(
+                    "currency"
+                )
+
+                # Verify reference, amount and currency
+                if transaction_reference != payment_reference:
+                    st.error(
+                        "❌ Payment reference does not match this order."
+                    )
+
+                elif abs(paid_amount - expected_amount) > 0.01:
+                    st.error(
+                        f"❌ Payment amount mismatch. "
+                        f"Expected ₦{expected_amount:,.2f}, "
+                        f"received ₦{paid_amount:,.2f}."
+                    )
+
+                elif transaction_currency != "NGN":
+                    st.error(
+                        f"❌ Unexpected payment currency: "
+                        f"{transaction_currency}"
+                    )
+
+                else:
+
+                    # -------------------------------------------------
+                    # PAYMENT IS NOW VERIFIED
+                    # -------------------------------------------------
+
+                    # st.session_state.payment_processed = True
+                    # st.session_state.notification_sent = True
+                    st.session_state.payment_processed = True
+
+                    st.session_state.user_sessions[user_id][
+                        'payment_processed'
+                    ] = True
+
+                    # st.session_state.user_sessions[user_id][
+                    #     'notification_sent'
+                    # ] = True
+
+                    customer_info = pending_order["customer_info"]
+                    total_amount = pending_order["total_amount"]
+                    order_summary = pending_order["order_summary"]
+
+                    local_image_paths = [
+                        Path(path)
+                        for path in pending_order["image_paths"]
+                        if Path(path).exists()
+                    ]
+
+                    # -------------------------------------------------
+                    # NOW notify the restaurant
+                    # -------------------------------------------------
+
+                    st.info(
+                        "🔄 Payment verified. "
+                        "Sending order to the restaurant..."
+                    )
+
+                    notification_result = (
+                        notification_manager
+                        .notify_owner_with_whatsapp_images(
+                            order_details=order_summary,
+                            customer_info=customer_info,
+                            total_amount=total_amount,
+                            image_references=local_image_paths
+                        )
+                    )
+
+                    st.sidebar.write("📊 Notification Results:")
+                    st.sidebar.write(
+                        f"   Pushover: {'✅' if notification_result['pushover'] else '❌'}"
+                    )
+                    st.sidebar.write(
+                        f"   Email: {'✅' if notification_result['email'] else '❌'}"
+                    )
+                    st.sidebar.write(
+                        f"   Images Sent: {notification_result['images_found']}"
+                    )
+
+                    if notification_result['pushover'] or notification_result['email']:
+                        st.session_state.notification_sent = True
+                        st.session_state.user_sessions[user_id]['notification_sent'] = True
+                        st.success("✅ Payment confirmed — order sent to restaurant.")
+                    else:
+                        st.error(
+                            "❌ Payment was verified, but the restaurant notification could not be sent."
+                        )
+
+
+
+            else:
+
+                st.warning(
+                    f"⏳ Payment has not been confirmed yet. "
+                    f"{verification.get('message', '')}"
+                )
+
+
+
 
 if __name__ == "__main__":
     main()
